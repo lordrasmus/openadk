@@ -1,0 +1,57 @@
+From f06eec40c4fa04295e45ef55c99644ff0f712698 Mon Sep 17 00:00:00 2001
+From: ramin <lordrasmus@gmail.com>
+Date: Sat, 17 Oct 2026 01:35:23 +0200
+Subject: [PATCH] loongarch64: no _init and _fini labels in the empty crti
+
+crti.S put the labels _init and _fini into an .init and a .fini section
+that stay empty, as crtn.S says they should.  But a defined _init makes
+the linker emit DT_INIT, and with nothing in .init the label sits at
+whatever comes next, which is the PLT: in tst-tlsmod1.so DT_INIT is
+0x7b0, the start of .plt.  The loader calls it at startup or on dlopen,
+runs the lazy resolver stub with garbage in its registers and jumps to
+-4.  tst-tls3, tst-tls10/11/12/14, tst-tls-at-ctor, dlafk and test3 died
+that way, with ra in ld-uClibc.
+
+Leave crti.S empty, like the riscv crtn.S and glibc's empty crti.
+Modules linked against it carry no DT_INIT, and those tests pass under
+qemu.  libc.so keeps its own DT_INIT, __uClibc_init from -init.
+
+Libraries already linked with the old crti.o, libgcc_s.so.1 of the
+current toolchain among them, still carry the bad DT_INIT, so
+__UCLIBC_SKIP_DT_INIT__ stays until they are relinked.
+
+Signed-off-by: Ramin Moussavi <lordrasmus@gmail.com>
+---
+ libc/sysdeps/linux/loongarch64/crti.S | 20 +++++---------------
+ 1 file changed, 5 insertions(+), 15 deletions(-)
+
+diff --git a/libc/sysdeps/linux/loongarch64/crti.S b/libc/sysdeps/linux/loongarch64/crti.S
+index 64d9aef15..08d5b32cf 100644
+--- a/libc/sysdeps/linux/loongarch64/crti.S
++++ b/libc/sysdeps/linux/loongarch64/crti.S
+@@ -1,16 +1,6 @@
+-/* dummy _init and _fini */
++/* Dummy crti file.
+ 
+-	.section .init
+-	.globl	_init
+-	.align	2
+-	.type	_init,@function
+-
+-_init:
+-
+-
+-	.section .fini
+-	.global	_fini
+-	.align	2
+-	.type	_fini,@function
+-
+-_fini: 
+\ No newline at end of file
++   In this configuration, crti.o and crtn.o are both empty because the
++   .init_array/.fini_array sections are used exclusively.  No _init or
++   _fini either: a label in an empty .init gets DT_INIT pointed at
++   whatever the linker places next, the PLT.  */
+-- 
+2.53.0
+
