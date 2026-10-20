@@ -405,6 +405,19 @@ $(WRKBUILD)/.compiled:
 			--with-build-sysroot='$${prefix}/${STAGING_HOST2TARGET}' \
 			--with-sysroot='$${prefix}/${STAGING_HOST2TARGET}'
 	PATH='$(TARGET_PATH)' $(MAKE) -C $(GCC_BUILD_DIR_FINAL) configure-host
+ifeq ($(ADK_TARGET_WITH_MMU)$(ADK_TARGET_BINFMT_ELF)$(ADK_TARGET_USE_STATIC_LIBS_ONLY),yy)
+	# noMMU ELF links with -pie but not -static (mk/vars.mk), so gcc uses
+	# the dynamic sequence "libgcc libc libgcc".  With NPTL the libc pulls
+	# in the unwinder from the last libgcc, which needs dl_iterate_phdr
+	# from the libc again, and there is no shared libc to resolve it.
+	# Group them as -static does; the target libraries' configure tests
+	# already link that way, so edit the specs before they are built.
+	cd $(GCC_BUILD_DIR_FINAL); \
+		PATH='$(TARGET_PATH)' \
+		$(MAKE) ${GCC_MAKEOPTS} all-gcc
+	$(SED) '/^\*link_gcc_c_sequence:/{n;s/.*/--start-group %G %{!nolibc:%L} --end-group/;}' \
+		$(GCC_BUILD_DIR_FINAL)/gcc/specs
+endif
 	cd $(GCC_BUILD_DIR_FINAL); \
 		PATH='$(TARGET_PATH)' \
 		$(MAKE) ${GCC_MAKEOPTS} all
@@ -414,6 +427,10 @@ $(WRKBUILD)/.installed: $(WRKBUILD)/.compiled
 	cd $(GCC_BUILD_DIR_FINAL); \
 		PATH='$(TARGET_PATH)' \
 		$(MAKE) install
+ifeq ($(ADK_TARGET_WITH_MMU)$(ADK_TARGET_BINFMT_ELF)$(ADK_TARGET_USE_STATIC_LIBS_ONLY),yy)
+	$(CP) $(GCC_BUILD_DIR_FINAL)/gcc/specs \
+		$(TOOLCHAIN_DIR)/usr/lib/gcc/$(GNU_TARGET_NAME)/$(PKG_VERSION)/specs
+endif
 	# remove duplicate tools, convert hardlinks to symlinks
 	set -e; \
 	cd $(TOOLCHAIN_DIR)/usr/$(GNU_TARGET_NAME)/bin; \

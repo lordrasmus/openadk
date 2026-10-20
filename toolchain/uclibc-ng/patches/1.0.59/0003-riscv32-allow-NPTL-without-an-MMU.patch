@@ -1,0 +1,24 @@
+From: ramin <lordrasmus@gmail.com>
+Subject: [PATCH] riscv32: allow NPTL without an MMU
+
+Experimental: riscv keeps the thread pointer in tp, which userspace sets
+itself and clone (CLONE_SETTLS) sets for new threads, so the kernel side
+needs nothing noMMU-specific.  Lets openadk build a rv32 noMMU toolchain
+with real TLS.
+
+---
+ extra/Configs/Config.in | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/extra/Configs/Config.in b/extra/Configs/Config.in
+--- a/extra/Configs/Config.in
++++ b/extra/Configs/Config.in
+@@ -623,7 +623,7 @@ config UCLIBC_HAS_THREADS_NATIVE
+ 		   !TARGET_h8300 && \
+ 		   !TARGET_hppa && \
+ 		   !TARGET_ia64 && \
+-		   (ARCH_USE_MMU || TARGET_arm || TARGET_xtensa)
++		   (ARCH_USE_MMU || TARGET_arm || TARGET_xtensa || TARGET_riscv32)
+ 	help
+ 	  If you want to compile uClibc with NPTL support, then answer Y.
+ 
