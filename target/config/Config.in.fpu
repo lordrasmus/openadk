@@ -19,9 +19,21 @@ config ADK_TARGET_ARCH_ARM_WITH_NEON
 	help
 	  Enable support for NEON SIMD CPU extensions.
 
+config ADK_TARGET_ARCH_ARC_WITH_FPU_DP
+	bool "enable double precision FPU"
+	depends on ADK_TARGET_ARCH_ARC && ADK_TARGET_CPU_WITH_FPU
+	default n
+	help
+	  Use the full double precision FPU of ARC HS, with division, square
+	  root and fused multiply-add (-mfpu=fpud_all).  Without it only
+	  float is computed in hardware, and double goes through libgcc,
+	  which knows neither the rounding mode nor the exception flags of
+	  <fenv.h>.
+
 config ADK_TARGET_FPU
 	string
 	depends on ADK_TARGET_ARCH_ARC || ADK_TARGET_ARCH_ARM
+	default "fpud_all" if ADK_TARGET_CPU_WITH_FPU && ADK_TARGET_ARCH_ARC_WITH_FPU_DP
 	default "fpus" if ADK_TARGET_CPU_WITH_FPU && ADK_TARGET_ARCH_ARC
 	default "vfp" if ADK_TARGET_CPU_WITH_FPU_VFP
 	default "vfpv3-fp16" if ADK_TARGET_CPU_ARM_CORTEX_A5 && !ADK_TARGET_ARCH_ARM_WITH_NEON
