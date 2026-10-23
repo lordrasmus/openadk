@@ -462,4 +462,10 @@ ifeq ($(ADK_DEBUG),)
 endif
 	touch $@
 
+ifeq ($(ADK_TOOLCHAIN_GCC_SOFTFP_FENV),y)
+post-patch:
+	[ ! -d ./patches/${PKG_VERSION}/softfp-fenv ] || ${PREVENT_PATCH} ${PATCH} ${WRKDIST} \
+	    ./patches/${PKG_VERSION}/softfp-fenv '*.patch' $(MAKE_TRACE)
+endif
+
 include ${ADK_TOPDIR}/mk/toolchain.mk

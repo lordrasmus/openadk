@@ -1,0 +1,193 @@
+From: Ramin Moussavi <lordrasmus@gmail.com>
+Date: Fri, 23 Oct 2026 00:00:00 +0200
+Subject: [PATCH] libgcc: let the C library keep the soft-float environment
+
+Without an FPU, libgcc's soft-fp rounds to nearest and drops the
+exception flags it computes: FP_INIT_ROUNDMODE is a constant and
+FP_HANDLE_EXCEPTIONS is empty.  fesetround and fetestexcept then have
+nothing to work with, and a C library can only offer FE_TONEAREST and
+no exceptions at all.
+
+Ask the C library instead, through two weak functions:
+__sfp_rounding_mode for the current mode and __sfp_raise_exceptions for
+the flags of each operation.  The encoding is the same on every target
+(that of the RISC-V fcsr), so the C library needs one set of FE_* values.
+A C library without the functions leaves both addresses null, and the
+behaviour is the one before.
+
+The soft-float branch of each soft-fp target includes the new header:
+cris h8300 nds32 nios2 or1k riscv rs6000 tilegx .
+
+diff -Nru a/libgcc/config/cris/sfp-machine.h b/libgcc/config/cris/sfp-machine.h
+--- a/libgcc/config/cris/sfp-machine.h
++++ b/libgcc/config/cris/sfp-machine.h
+@@ -79,3 +79,6 @@
+ # define strong_alias(name, aliasname) _strong_alias(name, aliasname)
+ # define _strong_alias(name, aliasname) \
+   extern __typeof (name) aliasname __attribute__ ((alias (#name)));
++
++/* Let the C library keep the soft-float environment.  */
++#include "soft-fp-libc-fenv.h"
+diff -Nru a/libgcc/config/h8300/sfp-machine.h b/libgcc/config/h8300/sfp-machine.h
+--- a/libgcc/config/h8300/sfp-machine.h
++++ b/libgcc/config/h8300/sfp-machine.h
+@@ -74,3 +74,6 @@
+ # define strong_alias(name, aliasname) _strong_alias(name, aliasname)
+ # define _strong_alias(name, aliasname) \
+   extern __typeof (name) aliasname __attribute__ ((alias (#name)));
++
++/* Let the C library keep the soft-float environment.  */
++#include "soft-fp-libc-fenv.h"
+diff -Nru a/libgcc/config/nds32/sfp-machine.h b/libgcc/config/nds32/sfp-machine.h
+--- a/libgcc/config/nds32/sfp-machine.h
++++ b/libgcc/config/nds32/sfp-machine.h
+@@ -111,3 +111,8 @@
+ # define strong_alias(name, aliasname) _strong_alias(name, aliasname)
+ # define _strong_alias(name, aliasname) \
+   extern __typeof (name) aliasname __attribute__ ((alias (#name)));
++
++/* Let the C library keep the soft-float environment.  */
++#if !defined(NDS32_ABI_2FP_PLUS)
++#include "soft-fp-libc-fenv.h"
++#endif
+diff -Nru a/libgcc/config/nios2/sfp-machine.h b/libgcc/config/nios2/sfp-machine.h
+--- a/libgcc/config/nios2/sfp-machine.h
++++ b/libgcc/config/nios2/sfp-machine.h
+@@ -79,3 +79,6 @@
+ # define strong_alias(name, aliasname) _strong_alias(name, aliasname)
+ # define _strong_alias(name, aliasname) \
+   extern __typeof (name) aliasname __attribute__ ((alias (#name)));
++
++/* Let the C library keep the soft-float environment.  */
++#include "soft-fp-libc-fenv.h"
+diff -Nru a/libgcc/config/or1k/sfp-machine.h b/libgcc/config/or1k/sfp-machine.h
+--- a/libgcc/config/or1k/sfp-machine.h
++++ b/libgcc/config/or1k/sfp-machine.h
+@@ -91,3 +91,8 @@
+ # define strong_alias(name, aliasname) _strong_alias(name, aliasname)
+ # define _strong_alias(name, aliasname) \
+   extern __typeof (name) aliasname __attribute__ ((alias (#name)));
++
++/* Let the C library keep the soft-float environment.  */
++#if !defined(__or1k_hard_float__)
++#include "soft-fp-libc-fenv.h"
++#endif
+diff -Nru a/libgcc/config/riscv/sfp-machine.h b/libgcc/config/riscv/sfp-machine.h
+--- a/libgcc/config/riscv/sfp-machine.h
++++ b/libgcc/config/riscv/sfp-machine.h
+@@ -139,3 +139,8 @@
+ # define strong_alias(name, aliasname) _strong_alias(name, aliasname)
+ # define _strong_alias(name, aliasname) \
+   extern __typeof (name) aliasname __attribute__ ((alias (#name)));
++
++/* Let the C library keep the soft-float environment.  */
++#if !defined(__riscv_flen) && !defined(__riscv_zfinx)
++#include "soft-fp-libc-fenv.h"
++#endif
+diff -Nru a/libgcc/config/rs6000/sfp-machine.h b/libgcc/config/rs6000/sfp-machine.h
+--- a/libgcc/config/rs6000/sfp-machine.h
++++ b/libgcc/config/rs6000/sfp-machine.h
+@@ -161,3 +161,8 @@
+ # define strong_alias(name, aliasname) _strong_alias(name, aliasname)
+ # define _strong_alias(name, aliasname) \
+   extern __typeof (name) aliasname __attribute__ ((alias (#name)));
++
++/* Let the C library keep the soft-float environment.  */
++#if defined(_SOFT_FLOAT) && !defined(__FLOAT128__)
++#include "soft-fp-libc-fenv.h"
++#endif
+diff -Nru a/libgcc/config/tilegx/sfp-machine.h b/libgcc/config/tilegx/sfp-machine.h
+--- a/libgcc/config/tilegx/sfp-machine.h
++++ b/libgcc/config/tilegx/sfp-machine.h
+@@ -3,3 +3,6 @@
+ #else
+ #include "config/tilegx/sfp-machine64.h"
+ #endif
++
++/* Let the C library keep the soft-float environment.  */
++#include "soft-fp-libc-fenv.h"
+diff -Nru a/libgcc/soft-fp-libc-fenv.h b/libgcc/soft-fp-libc-fenv.h
+--- a/libgcc/soft-fp-libc-fenv.h
++++ b/libgcc/soft-fp-libc-fenv.h
+@@ -0,0 +1,81 @@
++/* The floating-point environment of soft-float code, kept by the C library.
++   Copyright (C) 2026 Free Software Foundation, Inc.
++
++This file is part of GCC.
++
++GCC is free software; you can redistribute it and/or modify it under
++the terms of the GNU General Public License as published by the Free
++Software Foundation; either version 3, or (at your option) any later
++version.
++
++GCC is distributed in the hope that it will be useful, but WITHOUT ANY
++WARRANTY; without even the implied warranty of MERCHANTABILITY or
++FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
++for more details.
++
++Under Section 7 of GPL version 3, you are granted additional
++permissions described in the GCC Runtime Library Exception, version
++3.1, as published by the Free Software Foundation.
++
++You should have received a copy of the GNU General Public License and
++a copy of the GCC Runtime Library Exception along with this program;
++see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
++<http://www.gnu.org/licenses/>.  */
++
++/* Included at the end of sfp-machine.h by targets that compute in
++   software.  Without it soft-fp rounds to nearest and drops the
++   exception flags it computes, so <fenv.h> has nothing to offer.
++
++   A C library that keeps the environment provides two functions, and
++   libgcc asks for the rounding mode and reports the flags of every
++   operation through them.  Both are weak: without them the behaviour is
++   the one before.  The encoding is fixed, the same on every target, so
++   that the C library needs a single set of FE_* values for all of them:
++   the one of the RISC-V fcsr.  */
++
++#undef FP_EX_INVALID
++#undef FP_EX_OVERFLOW
++#undef FP_EX_UNDERFLOW
++#undef FP_EX_DIVZERO
++#undef FP_EX_INEXACT
++#undef FP_EX_ALL
++#define FP_EX_INEXACT		0x01
++#define FP_EX_UNDERFLOW		0x02
++#define FP_EX_OVERFLOW		0x04
++#define FP_EX_DIVZERO		0x08
++#define FP_EX_INVALID		0x10
++#define FP_EX_ALL		0x1f
++
++#undef FP_RND_NEAREST
++#undef FP_RND_ZERO
++#undef FP_RND_PINF
++#undef FP_RND_MINF
++#undef FP_RND_MASK
++#define FP_RND_NEAREST		0x0
++#define FP_RND_ZERO		0x1
++#define FP_RND_MINF		0x2
++#define FP_RND_PINF		0x3
++#define FP_RND_MASK		0x3
++
++extern int __sfp_rounding_mode (void) __attribute__ ((weak));
++extern void __sfp_raise_exceptions (int) __attribute__ ((weak));
++
++#undef _FP_DECL_EX
++#undef FP_ROUNDMODE
++#undef FP_INIT_ROUNDMODE
++#undef FP_HANDLE_EXCEPTIONS
++
++#define _FP_DECL_EX		int _frm __attribute__ ((unused))
++#define FP_ROUNDMODE		_frm
++
++#define FP_INIT_ROUNDMODE					\
++  do {								\
++    _frm = __sfp_rounding_mode					\
++	   ? __sfp_rounding_mode () & FP_RND_MASK : FP_RND_NEAREST;	\
++  } while (0)
++
++#define FP_HANDLE_EXCEPTIONS					\
++  do {								\
++    if (__builtin_expect (_fex, 0) && __sfp_raise_exceptions)	\
++      __sfp_raise_exceptions (_fex);				\
++  } while (0)

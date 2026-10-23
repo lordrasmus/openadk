@@ -59,6 +59,20 @@ endmenu
 
 menu "Advanced Toolchain options"
 
+config ADK_TOOLCHAIN_GCC_SOFTFP_FENV
+	bool "Let the C library keep the soft-float environment"
+	depends on ADK_TARGET_LIB_UCLIBC_NG
+	default n
+	help
+	  Without an FPU, libgcc rounds to nearest and drops the exception
+	  flags, so <fenv.h> can offer FE_TONEAREST only.  With this option
+	  libgcc's soft-fp asks the C library for the rounding mode and hands
+	  it the flags (toolchain/gcc/patches/<version>/softfp-fenv), and
+	  uClibc-ng keeps them in software.  bfin, csky, microblaze, sh and
+	  soft-float xtensa then use soft-fp instead of fp-bit or assembly.
+	  A soft-float operation costs about a third more, also in programs
+	  that never use fenv.
+
 config ADK_TOOLCHAIN_WITH_SANITIZER
 	bool "Enable libsanitizer in GCC"
 	select ADK_TOOLCHAIN_WITH_CXX
