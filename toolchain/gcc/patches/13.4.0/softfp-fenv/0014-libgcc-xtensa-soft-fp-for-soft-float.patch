@@ -1,0 +1,149 @@
+From: Ramin Moussavi <lordrasmus@gmail.com>
+Date: Fri, 23 Oct 2026 00:00:00 +0200
+Subject: [PATCH] libgcc: xtensa: soft-fp for soft-float
+
+The assembly in ieee754-df.S and ieee754-sf.S rounds to nearest only and
+sets no exception flags, so fenv cannot work on soft-float xtensa.  Build
+soft-fp there instead, with an sfp-machine.h that lets the C library keep
+the environment (soft-fp-libc-fenv.h).  Hard-float configurations keep
+the assembly; both sides are wrapped in __XTENSA_SOFT_FLOAT__, the way
+arm wraps soft-fp for v6m.
+
+diff -Nru a/libgcc/config/xtensa/lib1funcs.S b/libgcc/config/xtensa/lib1funcs.S
+--- a/libgcc/config/xtensa/lib1funcs.S
++++ b/libgcc/config/xtensa/lib1funcs.S
+@@ -908,5 +908,9 @@
+ #endif /* L_bswapdi2 */
+ 
+ 
++/* Soft-float takes soft-fp, which keeps the floating-point environment
++   (xtensa/t-softfp).  */
++#ifndef __XTENSA_SOFT_FLOAT__
+ #include "ieee754-df.S"
+ #include "ieee754-sf.S"
++#endif
+diff -Nru a/libgcc/config/xtensa/sfp-machine.h b/libgcc/config/xtensa/sfp-machine.h
+--- a/libgcc/config/xtensa/sfp-machine.h
++++ b/libgcc/config/xtensa/sfp-machine.h
+@@ -0,0 +1,97 @@
++/* Soft-fp definitions for a 32-bit target without an FPU of its own.
++   Copyright (C) 2026 Free Software Foundation, Inc.
++
++This file is part of GCC.
++
++GCC is free software; you can redistribute it and/or modify it under
++the terms of the GNU General Public License as published by the Free
++Software Foundation; either version 3, or (at your option) any later
++version.
++
++GCC is distributed in the hope that it will be useful, but WITHOUT ANY
++WARRANTY; without even the implied warranty of MERCHANTABILITY or
++FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
++for more details.
++
++Under Section 7 of GPL version 3, you are granted additional
++permissions described in the GCC Runtime Library Exception, version
++3.1, as published by the Free Software Foundation.
++
++You should have received a copy of the GNU General Public License and
++a copy of the GCC Runtime Library Exception along with this program;
++see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
++<http://www.gnu.org/licenses/>.  */
++
++#define _FP_W_TYPE_SIZE		32
++#define _FP_W_TYPE		unsigned long
++#define _FP_WS_TYPE		signed long
++#define _FP_I_TYPE		long
++
++#define _FP_MUL_MEAT_S(R,X,Y)				\
++  _FP_MUL_MEAT_1_wide(_FP_WFRACBITS_S,R,X,Y,umul_ppmm)
++#define _FP_MUL_MEAT_D(R,X,Y)				\
++  _FP_MUL_MEAT_2_wide(_FP_WFRACBITS_D,R,X,Y,umul_ppmm)
++#define _FP_MUL_MEAT_Q(R,X,Y)				\
++  _FP_MUL_MEAT_4_wide(_FP_WFRACBITS_Q,R,X,Y,umul_ppmm)
++
++#define _FP_DIV_MEAT_S(R,X,Y)	_FP_DIV_MEAT_1_loop(S,R,X,Y)
++#define _FP_DIV_MEAT_D(R,X,Y)	_FP_DIV_MEAT_2_udiv(D,R,X,Y)
++#define _FP_DIV_MEAT_Q(R,X,Y)	_FP_DIV_MEAT_4_udiv(Q,R,X,Y)
++
++#define _FP_NANFRAC_S		((_FP_QNANBIT_S << 1) - 1)
++#define _FP_NANFRAC_D		((_FP_QNANBIT_D << 1) - 1), -1
++#define _FP_NANFRAC_Q		((_FP_QNANBIT_Q << 1) - 1), -1, -1, -1
++#define _FP_NANSIGN_S		0
++#define _FP_NANSIGN_D		0
++#define _FP_NANSIGN_Q		0
++
++#define _FP_KEEPNANFRACP 1
++#define _FP_QNANNEGATEDP 0
++
++#define _FP_CHOOSENAN(fs, wc, R, X, Y, OP)			\
++  do {								\
++    if ((_FP_FRAC_HIGH_RAW_##fs(X) & _FP_QNANBIT_##fs)		\
++	&& !(_FP_FRAC_HIGH_RAW_##fs(Y) & _FP_QNANBIT_##fs))	\
++      {								\
++	R##_s = Y##_s;						\
++	_FP_FRAC_COPY_##wc(R,Y);				\
++      }								\
++    else							\
++      {								\
++	R##_s = X##_s;						\
++	_FP_FRAC_COPY_##wc(R,X);				\
++      }								\
++    R##_c = FP_CLS_NAN;						\
++  } while (0)
++
++#define _FP_TININESS_AFTER_ROUNDING 0
++
++#define	__LITTLE_ENDIAN	1234
++#define	__BIG_ENDIAN	4321
++
++#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
++#define __BYTE_ORDER __BIG_ENDIAN
++#else
++#define __BYTE_ORDER __LITTLE_ENDIAN
++#endif
++
++/* Define ALIASNAME as a strong alias for NAME.  */
++# define strong_alias(name, aliasname) _strong_alias(name, aliasname)
++# define _strong_alias(name, aliasname) \
++  extern __typeof (name) aliasname __attribute__ ((alias (#name)));
++
++/* longlong.h's umul_ppmm for xtensa uses DWunion from libgcc2.h, which the
++   soft-fp sources do not include.  */
++typedef int __sfp_SItype __attribute__ ((mode (SI)));
++typedef int __sfp_DItype __attribute__ ((mode (DI)));
++#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
++struct DWstruct { __sfp_SItype high, low; };
++#else
++struct DWstruct { __sfp_SItype low, high; };
++#endif
++typedef union { struct DWstruct s; __sfp_DItype ll; } DWunion;
++
++/* Let the C library keep the soft-float environment.  */
++#ifdef __XTENSA_SOFT_FLOAT__
++#include "soft-fp-libc-fenv.h"
++#endif
+diff -Nru a/libgcc/config/xtensa/t-softfp b/libgcc/config/xtensa/t-softfp
+--- a/libgcc/config/xtensa/t-softfp
++++ b/libgcc/config/xtensa/t-softfp
+@@ -0,0 +1,3 @@
++# soft-fp for soft-float only; hard-float keeps ieee754-{df,sf}.S.
++softfp_wrap_start := '\#ifdef __XTENSA_SOFT_FLOAT__'
++softfp_wrap_end := '\#endif'
+diff -Nru a/libgcc/config.host b/libgcc/config.host
+--- a/libgcc/config.host
++++ b/libgcc/config.host
+@@ -1508,11 +1508,11 @@
+ 	extra_parts="$extra_parts crti.o crtn.o"
+ 	;;
+ xtensa*-*-linux*)
+-	tmake_file="$tmake_file xtensa/t-xtensa xtensa/t-linux t-slibgcc-libgcc"
++	tmake_file="$tmake_file xtensa/t-xtensa xtensa/t-linux t-slibgcc-libgcc t-softfp-sfdf t-softfp xtensa/t-softfp"
+ 	md_unwind_header=xtensa/linux-unwind.h
+ 	;;
+ xtensa*-*-uclinux*)
+-	tmake_file="$tmake_file xtensa/t-xtensa xtensa/t-linux t-slibgcc-libgcc"
++	tmake_file="$tmake_file xtensa/t-xtensa xtensa/t-linux t-slibgcc-libgcc t-softfp-sfdf t-softfp xtensa/t-softfp"
+ 	md_unwind_header=xtensa/linux-unwind.h
+ 	extra_parts="$extra_parts crtbeginS.o crtbeginT.o crtendS.o"
+ 	;;
