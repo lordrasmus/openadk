@@ -1,0 +1,28 @@
+gdb/cris: skip missing special registers when single-stepping
+
+CRIS has no hardware single-step, so gdb computes the next PC itself
+in find_step_target.  That function reads all sixteen special registers,
+but CRISv10 lacks P2, P3 and P6 (size 0, cris_cannot_fetch_register
+rejects them), so every stepi and every resume from a breakpoint on a
+v10 target failed with "Register 18 is not available".  Leave the
+missing registers at zero instead.
+
+Tested against qemu-system-cris (ETRAX 100LX, Linux 4.9).
+
+--- a/gdb/cris-tdep.c	2026-10-24 01:40:47.252158752 +0200
++++ b/gdb/cris-tdep.c	2026-10-24 01:40:47.411162627 +0200
+@@ -1972,8 +1972,12 @@
+   offset = NUM_GENREGS;
+   for (i = 0; i < NUM_SPECREGS; i++)
+     {
+-      inst_env->preg[i] = 
+-	(unsigned long) regcache_raw_get_unsigned (regcache, offset + i);
++      /* Skip the special registers this CRIS version lacks.  */
++      if (cris_register_size (gdbarch, offset + i) == 0)
++	inst_env->preg[i] = 0;
++      else
++	inst_env->preg[i] =
++	  (unsigned long) regcache_raw_get_unsigned (regcache, offset + i);
+     }
+   inst_env->branch_found = 0;
+   inst_env->slot_needed = 0;
