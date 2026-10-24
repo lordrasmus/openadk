@@ -63,11 +63,13 @@ config ADK_TARGET_ROOTFS_SQUASHFS
 	bool "Compressed read-only root filesystem (squashfs)"
 	select ADK_LINUX_KERNEL_SQUASHFS
 	select ADK_HOST_NEED_SQUASHFS_TOOLS
+	select ADK_HOST_NEED_YAFUT if ADK_TARGET_WITH_YAFFS_KERNEL
 	select ADK_HOST_NEED_QEMU if ADK_TARGET_QEMU
 	select ADK_TARGET_QEMU_WITH_BLOCK if ADK_TARGET_QEMU
 	depends on ADK_TARGET_WITH_MTD \
 		|| ADK_TARGET_SYSTEM_QEMU_MICROBLAZE_S3ADSP1800 \
-		|| ADK_TARGET_SYSTEM_QEMU_MICROBLAZE_ML605
+		|| ADK_TARGET_SYSTEM_QEMU_MICROBLAZE_ML605 \
+		|| ADK_TARGET_SYSTEM_QEMU_H8300
 	help
 	  highly compressed read-only filesystem for MTD flash systems.
 
@@ -87,6 +89,7 @@ config ADK_TARGET_ROOTFS_UBIFS
 	select ADK_LINUX_KERNEL_UBIFS_FS if ADK_TARGET_OS_LINUX
 	select ADK_HOST_NEED_MTD_UTILS
 	select ADK_HOST_NEED_KERNEL2MINOR
+	select ADK_HOST_NEED_YAFUT if ADK_TARGET_WITH_YAFFS_KERNEL
 	depends on ADK_TARGET_WITH_NAND
 	help
 	  Root filesystem on NAND flash with UBI.
@@ -184,6 +187,7 @@ config ADK_TARGET_ROOTDEV
 
 config ADK_TARGET_ROOTSIZE
 	int "Root filesystem size"
+	depends on ADK_TARGET_ROOTFS_GENIMAGE
 	default 128
 	help
 	  Size of the rootfs image.

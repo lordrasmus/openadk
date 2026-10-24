@@ -246,6 +246,17 @@ ifeq ($(ADK_TARGET_CPU_H8S),y)
 endif
 endif
 
+# powerpc
+ifeq ($(ADK_TARGET_ARCH_PPC),y)
+ifeq ($(ADK_TARGET_ARCH_PPC_WITH_SPE),y)
+	$(SED) 's/.*\(CONFIG_E500\).*/\1=y/' ${WRKBUILD}/.config
+	$(SED) 's/.*\(CONFIG_CLASSIC\).*/# \1 is not set/' ${WRKBUILD}/.config
+else
+	$(SED) 's/.*\(CONFIG_CLASSIC\).*/\1=y/' ${WRKBUILD}/.config
+	$(SED) 's/.*\(CONFIG_E500\).*/# \1 is not set/' ${WRKBUILD}/.config
+endif
+endif
+
 # sh
 ifeq ($(ADK_TARGET_ARCH_SH),y)
 ifeq ($(ADK_TARGET_CPU_SH_SH4A),y)
@@ -344,11 +355,13 @@ ifeq ($(ADK_TARGET_ABI_N32),y)
 	$(SED) 's/.*\(CONFIG_MIPS_N32_ABI\).*/\1=y/' ${WRKBUILD}/.config
 	$(SED) 's/.*\(CONFIG_MIPS_O32_ABI\).*/# \1 is not set/' ${WRKBUILD}/.config
 	$(SED) 's/.*\(CONFIG_MIPS_N64_ABI\).*/# \1 is not set/' ${WRKBUILD}/.config
+	echo 'UCLIBC_USE_TIME64=y' >> ${WRKBUILD}/.config
 endif
 ifeq ($(ADK_TARGET_ABI_O32),y)
 	$(SED) 's/.*\(CONFIG_MIPS_O32_ABI\).*/\1=y/' ${WRKBUILD}/.config
 	$(SED) 's/.*\(CONFIG_MIPS_N32_ABI\).*/# \1 is not set/' ${WRKBUILD}/.config
 	$(SED) 's/.*\(CONFIG_MIPS_N64_ABI\).*/# \1 is not set/' ${WRKBUILD}/.config
+	echo 'UCLIBC_USE_TIME64=y' >> ${WRKBUILD}/.config
 endif
 endif
 	echo N|PATH='$(HOST_PATH)' $(MAKE) -C $(WRKBUILD) \
@@ -363,12 +376,25 @@ endif
 ifeq ($(ADK_TARGET_LIBC_WITH_LOCALE),y)
 	$(SED) 's/.*\(UCLIBC_BUILD_MINIMAL_LOCALES\).*/\1="$(ADK_RUNTIME_DEFAULT_LOCALE)"/' ${WRKBUILD}/.config
 endif
+	PATH='$(HOST_PATH)' $(MAKE) $(UCLIBC_MAKEOPTS) -C $(WRKBUILD) \
+		ARCH="$(ADK_TARGET_ARCH)" \
+		CROSS_COMPILE="$(TARGET_CROSS)" \
+		CC='$(TARGET_CC)' \
+		HOSTCC="$(HOST_CC)" \
+		PREFIX=$(STAGING_TARGET_DIR) \
+		DEVEL_PREFIX=/usr/ \
+		RUNTIME_PREFIX=/ \
+		UCLIBC_EXTRA_CFLAGS="$(TARGET_CFLAGS)" \
+		UCLIBC_EXTRA_LDFLAGS="$(TARGET_LDFLAGS)" \
+		VERBOSE=1 \
+		install_headers
 	touch $@
 
 $(WRKBUILD)/.compiled: $(WRKBUILD)/.configured
 	PATH='$(HOST_PATH)' $(MAKE) $(UCLIBC_MAKEOPTS) -C $(WRKBUILD) \
 		ARCH="$(ADK_TARGET_ARCH)" \
 		CROSS_COMPILE="$(TARGET_CROSS)" \
+		CC='$(TARGET_CC)' \
 		HOSTCC="$(HOST_CC)" \
 		PREFIX=$(STAGING_TARGET_DIR) \
 		DEVEL_PREFIX=/usr/ \
@@ -381,6 +407,7 @@ ifeq ($(ADK_TARGET_LIBC_UTILS),y)
 	PATH='$(HOST_PATH)' $(MAKE) $(UCLIBC_MAKEOPTS) -C $(WRKBUILD) \
 		ARCH="$(ADK_TARGET_ARCH)" \
 		CROSS_COMPILE="$(TARGET_CROSS)" \
+		CC='$(TARGET_CC)' \
 		HOSTCC="$(HOST_CC)" \
 		PREFIX=$(STAGING_TARGET_DIR) \
 		DEVEL_PREFIX=/usr/ \
@@ -396,6 +423,7 @@ $(WRKBUILD)/.installed: $(WRKBUILD)/.compiled
 	PATH='$(HOST_PATH)' $(MAKE) -C $(WRKBUILD) \
 		ARCH="$(ADK_TARGET_ARCH)" \
 		CROSS_COMPILE="$(TARGET_CROSS)" \
+		CC='$(TARGET_CC)' \
 		HOSTCC="$(HOST_CC)" \
 		PREFIX=$(STAGING_TARGET_DIR) \
 		DEVEL_PREFIX=/usr/ \

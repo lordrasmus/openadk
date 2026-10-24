@@ -90,6 +90,13 @@ endif
 ifeq ($(ADK_TARGET_OS_BAREMETAL),y)
 GNU_TARGET_NAME:=	$(ADK_TARGET_CPU_ARCH)-$(ADK_TARGET_SUFFIX)
 endif
+ifeq ($(ADK_BUILD_COMPILER_LLVM),y)
+GNU_TARGET_NAME:=	$(ADK_TARGET_CPU_ARCH)-$(ADK_TARGET_LINUXTYPE)-$(ADK_TARGET_SUFFIX)
+# fake glibc toolchain as long as LLVM doesn't know uclibc-ng
+ifeq ($(ADK_TARGET_LIB_UCLIBC_NG),y)
+GNU_TARGET_NAME:=	$(ADK_TARGET_CPU_ARCH)-$(ADK_TARGET_LINUXTYPE)-gnu
+endif
+endif
 
 TARGET_CROSS:=		$(TOOLCHAIN_DIR)/usr/bin/$(GNU_TARGET_NAME)-
 TARGET_COMPILER_PREFIX?=${TARGET_CROSS}
@@ -105,9 +112,12 @@ TARGET_CC_NO_CCACHE:=	${TARGET_CC}
 TARGET_CXX_NO_CCACHE:=	${TARGET_CXX}
 endif
 ifeq ($(ADK_BUILD_COMPILER_LLVM),y)
-TARGET_CC:=		clang --target=${GNU_TARGET_NAME} --sysroot=$(STAGING_TARGET_DIR)
-TARGET_CXX:=		clang++ --target=${GNU_TARGET_NAME} --sysroot=$(STAGING_TARGET_DIR)
-TARGET_LDFLAGS:=	-fuse-ld=lld -stdlib=libc++
+TARGET_CC:=		clang --target=$(GNU_TARGET_NAME) --sysroot=$(STAGING_TARGET_DIR)
+TARGET_CXX:=		clang++ --target=$(GNU_TARGET_NAME) --sysroot=$(STAGING_TARGET_DIR)
+TARGET_LDFLAGS:=	-fuse-ld=lld -rtlib=compiler-rt
+ifeq ($(ADK_TARGET_LIB_UCLIBC_NG),y)
+TARGET_LDFLAGS:=	-fuse-ld=lld -rtlib=compiler-rt -unwindlib=libunwind -Wl,--dynamic-linker,/lib/ld-uClibc.so.1
+endif
 endif
 
 # gcc specific
@@ -124,6 +134,8 @@ TARGET_CXX+=           $(ADK_TARGET_ABI_CFLAGS)
 endif
 
 TARGET_LD:=		${TARGET_COMPILER_PREFIX}ld
+TARGET_OBJDUMP:=	${TARGET_COMPILER_PREFIX}objdump
+TARGET_OBJCOPY:=	${TARGET_COMPILER_PREFIX}objcopy
 ifneq ($(ADK_TARGET_USE_LTO),)
 TARGET_AR:=		${TARGET_COMPILER_PREFIX}gcc-ar
 TARGET_RANLIB:=		${TARGET_COMPILER_PREFIX}gcc-ranlib
@@ -178,9 +190,9 @@ endif
 endif
 
 ifeq ($(ADK_TARGET_BINFMT_FLAT),y)
-TARGET_LDFLAGS+=	-Wl,-elf2flt=-r
-TARGET_CFLAGS+=		-Wl,-elf2flt=-r
-TARGET_CXXFLAGS+=	-Wl,-elf2flt=-r
+TARGET_LDFLAGS+=	-Wl,-elf2flt=-r -Wl,-elf2flt=-s$(ADK_TARGET_BINFMT_FLAT_STACKSIZE)
+TARGET_CFLAGS+=		-Wl,-elf2flt=-r -Wl,-elf2flt=-s$(ADK_TARGET_BINFMT_FLAT_STACKSIZE)
+TARGET_CXXFLAGS+=	-Wl,-elf2flt=-r -Wl,-elf2flt=-s$(ADK_TARGET_BINFMT_FLAT_STACKSIZE)
 endif
 
 ifeq ($(ADK_TARGET_BINFMT_FLAT_SEP_DATA),y)
@@ -228,6 +240,7 @@ TARGET_LDFLAGS+=	-Wl,--secure-plt
 endif
 endif
 
+ifeq ($(ADK_TARGET_LIB_NEWLIB),)
 ifneq ($(ADK_TARGET_BINFMT_ELF)$(ADK_TARGET_WITH_MMU),y)
 ifeq ($(ADK_TARGET_USE_STATIC_LIBS_ONLY)$(ADK_TARGET_USE_STATIC_AND_SHARED_LIBS),y)
 TARGET_CFLAGS+=		-static
@@ -238,6 +251,7 @@ else
 TARGET_CFLAGS+=		-fpie
 TARGET_CXXFLAGS+=	-fpie
 TARGET_LDFLAGS+=	-fpie -pie
+endif
 endif
 
 ifneq ($(ADK_TARGET_USE_SSP),)

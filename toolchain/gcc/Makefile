@@ -156,6 +156,11 @@ GCC_CONFOPTS+=		--with-nan=$(ADK_TARGET_NAN_MODE)
 endif
 endif
 
+# very old gcc compiler
+ifeq ($(ADK_TARGET_ARCH_AVR32),y)
+GCC_MAKEOPTS+=		CFLAGS="-std=gnu89 -fcommon"
+endif
+
 # .symver is broken for Blackfin, simple C++ apps fail to link
 ifeq ($(ADK_TARGET_ARCH_BFIN),y)
 GCC_CONFOPTS+=		--disable-symvers
@@ -171,6 +176,7 @@ endif
 endif
 
 ifeq ($(ADK_TARGET_ARCH_METAG),y)
+GCC_MAKEOPTS+=		CFLAGS="-std=gnu89"
 GCC_CONFOPTS+=		--with-cpu=2.1 --enable-meta-default --disable-symvers
 endif
 
@@ -325,6 +331,9 @@ endif
 	(cd $(TOOLCHAIN_DIR)/usr/$(GNU_TARGET_NAME); \
 		ln -s ../$(STAGING_HOST2TARGET)/usr/lib lib)
 ifeq ($(ADK_TARGET_ARCH_SH),y)
+ifeq ($(ADK_TARGET_CPU_SH_J2),y)
+	(cd ${STAGING_TARGET_DIR}/ && ln -sf . j2)
+endif
 ifeq ($(ADK_TARGET_CPU_SH_SH2),y)
 	(cd ${STAGING_TARGET_DIR}/ && ln -sf . m2)
 endif

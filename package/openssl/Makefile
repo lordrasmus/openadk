@@ -4,9 +4,9 @@
 include $(ADK_TOPDIR)/rules.mk
 
 PKG_NAME:=		openssl
-PKG_VERSION:=		3.5.7
+PKG_VERSION:=		3.5.9
 PKG_RELEASE:=		1
-PKG_HASH:=		a8c0d28a529ca480f9f36cf5792e2cd21984552a3c8e4aa11a24aa31aeac98e8
+PKG_HASH:=		603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a
 PKG_DESCR:=		ssl/tls library
 PKG_SECTION:=		libs/crypto
 PKG_URL:=		https://openssl-library.org/
@@ -32,13 +32,19 @@ $(eval $(call PKG_template,LIBOPENSSL,libopenssl,${PKG_VERSION}-${PKG_RELEASE},$
 $(eval $(call PKG_template,OPENSSL_UTIL,openssl-util,${PKG_VERSION}-${PKG_RELEASE},${PKGSS_OPENSSL_UTIL},${PKGSD_OPENSSL_UTIL},${PKGSC_OPENSSL_UTIL}))
 
 ifeq ($(ADK_TARGET_USE_STATIC_LIBS_ONLY),y)
-OPENSSL_OPTIONS:=	no-shared zlib no-dso
+OPENSSL_OPTIONS:=	no-shared no-zlib no-dso
 else
 OPENSSL_OPTIONS:=	shared zlib-dynamic
 endif
 
 OPENSSL_OPTIONS+=	threads no-err no-tests no-fuzz-libfuzzer no-fuzz-afl 
-OPENSSL_OPTIONS+=	no-rc5 no-rc2 no-md2 no-idea no-docs
+OPENSSL_OPTIONS+=	no-rc5 no-rc2 no-md2 no-idea no-camellia no-docs
+
+ifeq ($(ADK_TARGET_WITH_MMU),)
+OPENSSL_OPTIONS+=	-DHAVE_FORK=0 -DHAVE_MADVISE=0
+else
+TARGET_LDFLAGS+=	-latomic
+endif
 
 HOST_STYLE:=		manual
 CONFIG_STYLE:=		manual
@@ -64,22 +70,26 @@ ifeq ($(ADK_TARGET_ARCH_AARCH64),y)
 CONFIG:=		linux-aarch64
 OPENSSL_OPTIONS+=	no-asm
 endif
+ifeq ($(ADK_TARGET_ARCH_RISCV64),y)
+CONFIG:=		linux64-riscv64
+OPENSSL_OPTIONS+=	no-asm
+endif
 
 host-configure:
 	(cd $(WRKBUILD); ./config --prefix='$(STAGING_HOST_DIR)/usr' -fPIC -ldl no-docs no-tests)
 
 host-build:
-	(cd $(WRKBUILD); $(MAKE))
+	(cd $(WRKBUILD); $(MAKE) -j$(ADK_MAKE_JOBS))
 
 openssl-hostinstall:
-	(cd $(WRKBUILD); $(MAKE) install)
+	(cd $(WRKBUILD); $(MAKE) -j$(ADK_MAKE_JOBS) install)
 
 do-configure:
 	(cd $(WRKBUILD); \
 		PATH='$(TARGET_PATH)' \
 		CROSS_COMPILE='' \
 		CFLAGS="$(TARGET_CFLAGS)" \
-		LDFLAGS="$(TARGET_LDFLAGS) -latomic" \
+		LDFLAGS="$(TARGET_LDFLAGS)" \
 		./Configure $(CONFIG) \
 			--prefix=/usr \
 			--openssldir=/etc/ssl \

@@ -8,8 +8,7 @@ PKG_VERSION:=		git
 PKG_RELEASE:=		1
 PKG_DESCR:=		embedded c library testsuite
 PKG_SECTION:=		base/tests
-PKG_KDEPENDS:=		inotify-user
-PKG_URL:=		http://www.uclibc-ng.org
+PKG_URL:=		https://uclibc-ng.org
 PKG_SITES:=		https://git.uclibc-ng.org/git/uclibc-ng-test.git
 
 PKG_NOPARALLEL:=	1
@@ -65,6 +64,12 @@ ifeq ($(ADK_TARGET_ARCH_KVX),y)
 XAKE_FLAGS+=		NO_TLS=1
 endif
 ifeq ($(ADK_TARGET_ARCH_NDS32),y)
+XAKE_FLAGS+=		NO_TLS=1
+endif
+ifeq ($(ADK_TARGET_ARCH_LOONGARCH),y)
+XAKE_FLAGS+=		NO_TLS=1
+endif
+ifeq ($(ADK_BUILD_COMPILER_LLVM),y)
 XAKE_FLAGS+=		NO_TLS=1
 endif
 
