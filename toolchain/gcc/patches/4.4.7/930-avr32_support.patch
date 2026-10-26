@@ -17112,7 +17112,7 @@
 +		
 --- /dev/null
 +++ b/gcc/config/avr32/lib1funcs.S
-@@ -0,0 +1,2916 @@
+@@ -0,0 +1,2921 @@
 +/* Macro for moving immediate value to register. */	
 +.macro mov_imm	reg, imm
 +.if	(((\imm & 0xfffff) == \imm) || ((\imm | 0xfff00000) == \imm))
@@ -18144,6 +18144,8 @@
 +        /* Check if opL is Inf. or NaN */
 +        cp.w    r6, 0x7ff
 +        breq    __avr32_f64_add_opL_nan_or_inf
++	/* r11 has lost the exponent and the sign by now; put them back. */
++	or      r11, r12, r7 << 20
 +        ldm     sp++, r5, r6, r7, pc/* opL not Inf or NaN, return opH */
 +__avr32_f64_add_opL_nan_or_inf:
 +        cbr     r9, 20
@@ -19428,8 +19430,8 @@
 +
 +        cp.w    r9, 0
 +        subfeq  r12, 0
-+        reteq   0                       /* op1 is zero and op2 is not zero */
-+                                        /* or NaN so return zero */
++        moveq   r12, 0                  /* op1 is zero and op2 is not zero */
++        breq    __divsf_return_op1      /* or NaN so return zero with the sign */
 +
 +14:     
 + 
@@ -19596,7 +19598,8 @@
 +        ret     -1      /* The rest gives NaN*/
 +3:      
 +        /* Op2 is NaN or inf */
-+        reteq   0       /* Return zero if number/inf*/
++        moveq   r12, 0  /* Return zero with the sign if number/inf*/
++        breq    __divsf_return_op1
 +        ret     -1      /* Return NaN*/
 +4:
 +        /* Op1 is zero ? */
@@ -19749,7 +19752,7 @@
 +__avr32_f32_mul_op2_subnormal:
 +        cbr     r11, 31
 +        clz     r9, r11
-+        retcs   0       /* op2 is zero. Return 0 */
++        retcs   r12     /* op2 is zero. Return 0 with the sign of the product */
 +        sub     r9, 8
 +        lsl     r11, r11, r9
 +        rsub    r9, r9, 1
@@ -19761,7 +19764,7 @@
 +        /* op2 is subnormal */  
 +        cbr     r8, 31
 +        clz     r10, r11
-+        retcs   0       /* op1 is zero. Return 0 */
++        retcs   r12     /* op1 is zero. Return 0 with the sign of the product */
 +        lsl     r8, r8, r10
 +        rsub    r10, r10, 1
 +                        
@@ -19793,7 +19796,7 @@
 +           it will be represented with zero. */
 +        rsub    r9, r9, 9
 +        rsub    r8, r9, 32
-+        retcs   0
++        retcs   r12     /* zero with the sign of the product */
 + 
 +        /* Shift the mantissa into the correct position.*/
 +        lsr     r9, r11, r9
@@ -19923,7 +19926,7 @@
 +__avr32_f32_to_f64:
 +        lsl     r11,r12,1               /* Remove sign bit, keep original value in r12*/
 +        moveq   r10, 0
-+        reteq   r11                     /* Return zero if input is zero */
++        breq    __extendsfdf_return_op1 /* Return zero with the sign of op1 */
 + 
 +        bfextu  r9,r11,24,8              /* Get exponent */
 +        cp.w    r9,0xff                 /* check for NaN or inf */
@@ -19970,10 +19973,12 @@
 +        lsl     r9,r11,1                /* Unpack exponent */
 +        lsr     r9,21
 + 
-+        reteq   0                       /* If exponent is 0 the number is so small
++        brne    4f                      /* If exponent is 0 the number is so small
 +                                           that the conversion to single float gives
-+                                           zero */
-+ 
++                                           zero, with the sign of op1 */
++	andh	r11, 0x8000, COH
++	ret	r11
++4:
 +        lsl     r8,r11,10                  /* Adjust mantissa */
 +        or      r12,r8,r10>>22
 + 
@@ -20004,8 +20009,8 @@
 +        /* NaN or inf */
 +        cbr     r12,31                  /* clear implicit bit */
 +        retne   -1                      /* Return NaN if mantissa not zero */
-+	mov_imm	r12, 0x7f800000
-+        ret     r12                     /* Return inf */
++	mov_imm	r12, 0xff000000		/* inf, shifted left for the sign */
++        rjmp    __truncdfsf_return_op1  /* Return inf with the sign of op1 */
 + 
 +3:      /* Result is subnormal. Adjust it.*/
 +        adjust_subnormal_sf     r12/*sf*/,r9 /*exp*/, r12 /*mant*/, r11/*sign*/, r10 /*scratch*/
