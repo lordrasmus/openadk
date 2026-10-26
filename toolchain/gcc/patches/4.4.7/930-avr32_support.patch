@@ -17112,7 +17112,7 @@
 +		
 --- /dev/null
 +++ b/gcc/config/avr32/lib1funcs.S
-@@ -0,0 +1,2921 @@
+@@ -0,0 +1,2945 @@
 +/* Macro for moving immediate value to register. */	
 +.macro mov_imm	reg, imm
 +.if	(((\imm & 0xfffff) == \imm) || ((\imm | 0xfff00000) == \imm))
@@ -17218,7 +17218,7 @@
 +        rsub    \exp,\exp, 1            /* shift amount */
 +        cp.w    \exp, 25
 +        movhs   \mant, 0                
-+        brhs    90f                     /* Return zero */
++        brhs    91f                     /* Return zero, with the sign */
 +        rsub    \scratch, \exp, 32
 +        lsl     \scratch, \mant,\scratch/* Check if there are any bits set
 +                                           in the bits discarded in the mantissa */
@@ -17235,6 +17235,7 @@
 +           bit set after rounding which means that we have the lowest normal number
 +           but this is ok since this bit has the same position as the LSB of the
 +           exponent */
++91:
 +        lsr     \sf, \mant, 7
 +        /* Rotate in sign */
 +        lsl     \sign, 1
@@ -17566,7 +17567,7 @@
 +0:
 +        /* msw is zero so only need to consider lsw */
 +        lsl     r9, r8, r5
-+	breq	__avr32_f64_mul_res_zero
++	breq	__avr32_f64_mul_op2_zero
 +        mov     r8, 0
 +	sub	r5, 12 - AVR32_F64_MUL_OP2_INT_BITS
 +        sub     r6, r5            /* adjust exponent */
@@ -17576,8 +17577,10 @@
 +__avr32_f64_mul_op_nan_or_inf:
 +        /* Same code for OP1 and OP2*/
 +        /* Since we are here, at least one of the OPs were NaN or INF*/
-+	andh	r9, 0x000f  /* Remove sign bit and exponent */
-+	andh	r11, 0x000f  /* Remove sign bit and exponent */
++	/* The mantissas are unpacked already: op2 sits in r9[20:0] below its
++	   implicit bit 21, op1 in r11[29:0] below its implicit bit 30. */
++	andh	r9, 0x001f  /* Remove implicit bit */
++	andh	r11, 0x3fff  /* Remove implicit bit */
 +        /* Merge the regs in each operand to check for zero*/
 +        or      r11, r10 /* op1 */
 +        or      r9, r8 /* op2 */
@@ -17642,6 +17645,10 @@
 +        ldm     sp++, r5, r6, r7,pc
 +#endif
 +
++__avr32_f64_mul_op2_zero:
++	/* Inf or NaN times zero is NaN. */
++	cp.w	r7, 0x7ff
++	breq	__avr32_f64_mul_res_nan
 +__avr32_f64_mul_res_zero:/* Multiply result is zero. */
 +        mov     r11, lr /*Get correct sign*/
 +        andh    r11, 0x8000, COH
@@ -17921,7 +17928,7 @@
 +				   part that was shifted out. */
 +	lsl	r9, r11, r8
 +	or	r10, r10, r9
-+	lsr	r11, r10, r7
++	lsr	r11, r11, r7
 +	/* Set exponent */
 +	mov	r7, 0
 +	rjmp	__avr32_f64_sub_longnormalize_done
@@ -18787,6 +18794,8 @@
 +#endif
 +        cp      r7, 0   
 +        brle    __avr32_f64_div_res_subnormal /* Result was subnormal. */
++	cp.w	r7, 0x7ff
++	brge	18f	/* Too large, return inf. */
 + 
 + 
 +#if defined(L_avr32_f64_div)
@@ -18848,19 +18857,19 @@
 +                
 +2:
 +        /* Op1 is NaN or inf */
-+        andh    r11, 0x000f /* Extract mantissa */
++        andh    r11, 0x1fff /* Extract mantissa, it is in 2.62 format already */
 +        or      r11, r10
 +        brne    16f     /* Return NaN if op1 is NaN */
 +        /* Op1 is inf check op2 */
 +        lsr     r6, r9, 20 /* Extract exponent */
 +        cbr     r6, 11      /* Clear sign bit */
 +        cp      r6, 0x7ff
-+        brne    17f     /* Inf/number gives inf, return inf */
++        brne    18f     /* Inf/number gives inf, return inf */
 +        rjmp    16f     /* The rest gives NaN*/
 +        
 +3:      
 +        /* Op1 is a valid number. Op 2 is NaN or inf */
-+        andh    r9, 0x000f /* Extract mantissa */
++        andh    r9, 0x1fff /* Extract mantissa, it is in 2.62 format already */
 +        or      r9, r8
 +        brne    16f     /* Return NaN if op2 is NaN */
 +        rjmp    15f     /* Op2 was inf, return zero*/
@@ -18976,6 +18985,7 @@
 +        /* Check if op1 is zero. */
 +        or      r4, r10, r11
 +        breq    __avr32_f64_div_op1_zero
++18:
 +        /* Return INF. */
 +        mov     r11, lr /*Get correct sign*/
 +        andh    r11, 0x8000, COH
@@ -19428,6 +19438,7 @@
 +        lsl     r11,7
 +        sbr     r11, 31 /*Implicit bit*/
 +
++15:
 +        cp.w    r9, 0
 +        subfeq  r12, 0
 +        moveq   r12, 0                  /* op1 is zero and op2 is not zero */
@@ -19539,6 +19550,8 @@
 +0:		
 +        cp      r9, 0   
 +        brle    __avr32_f32_div_res_subnormal /* Result was subnormal. */
++	cp.w	r9, 0xff
++	brge	__avr32_f32_div_res_inf /* Too large, return inf. */
 +
 +		
 +#if defined(L_avr32_f32_div)
@@ -19582,6 +19595,10 @@
 +	add	r12, r11
 +        ret     r12
 +
++__avr32_f32_div_res_inf:
++        ld.d    r6, sp++
++        ld.w    r5, sp++
++	mov_imm	r12, 0xff000000
 +__divsf_return_op1:     
 +        lsl     r8, 1
 +        ror     r12
@@ -19598,6 +19615,7 @@
 +        ret     -1      /* The rest gives NaN*/
 +3:      
 +        /* Op2 is NaN or inf */
++	lsl	r11, 8	/* mantissa of op2, zero for inf */
 +        moveq   r12, 0  /* Return zero with the sign if number/inf*/
 +        breq    __divsf_return_op1
 +        ret     -1      /* Return NaN*/
@@ -19607,7 +19625,6 @@
 +        reteq   -1      /* 0.0/0.0 is NaN */
 +        /* Op1 is Nan? */
 +        lsr     r9, r12, 24
-+        breq    11f /*If number is subnormal*/
 +        cp      r9, 0xff
 +        brhs    2b  /* Check op1 for NaN or Inf */
 +        /* Nonzero/0.0 is Inf. Sign bit will be shifted in before returning*/
@@ -19626,7 +19643,7 @@
 +        clz     r10,r11
 +        lsl     r11,r11,r10
 +        rsub    r10,r10,1
-+        rjmp    14b
++        rjmp    15b	/* op1 may still be zero */
 +        
 + 
 +__avr32_f32_div_res_subnormal:     /* Divide result was subnormal */
@@ -19753,7 +19770,8 @@
 +        cbr     r11, 31
 +        clz     r9, r11
 +        retcs   r12     /* op2 is zero. Return 0 with the sign of the product */
-+        sub     r9, 8
++	/* The mantissa is in r11[30:8] already; normalizing it means moving
++	   the leading one to bit 31, a shift by the full count. */
 +        lsl     r11, r11, r9
 +        rsub    r9, r9, 1
 +                
@@ -19763,7 +19781,7 @@
 + 
 +        /* op2 is subnormal */  
 +        cbr     r8, 31
-+        clz     r10, r11
++        clz     r10, r8
 +        retcs   r12     /* op1 is zero. Return 0 with the sign of the product */
 +        lsl     r8, r8, r10
 +        rsub    r10, r10, 1
@@ -19800,14 +19818,17 @@
 + 
 +        /* Shift the mantissa into the correct position.*/
 +        lsr     r9, r11, r9
++	cp.w	r8, 0	/* A shift of 32 is one of 0 to lsr; nothing is left. */
++	moveq	r9, 0
 +        /* Add sign bit. */
 +        or      r12, r9
 +        /* Put the shifted out bits in the most significant part
 +           of r8. */
 +        lsl     r11, r11, r8
 + 
-+        /* Add all the remainder bits used for rounding into r11 */
++        /* The bits below them only count as a sticky bit. */
 +        andh    r10, 0x00FF     
++	srne	r10
 +        or      r10, r11
 +        rjmp    __avr32_f32_mul_round
 +
@@ -19996,6 +20017,8 @@
 + 
 +        cp.w    r9, 0                   /* Check for subnormal number */
 +        brle    3f
++	cp.w	r9, 0xff		/* Too large for float: pack_sf would cut */
++	brge	5f			/* the exponent to 8 bits, return inf. */
 + 
 +        round_sf        r9 /*exp*/, r12 /*mant*/, r10 /*scratch*/       
 +        pack_sf         r12 /*sf*/, r9 /*exp*/, r12 /*mant*/
@@ -20009,6 +20032,7 @@
 +        /* NaN or inf */
 +        cbr     r12,31                  /* clear implicit bit */
 +        retne   -1                      /* Return NaN if mantissa not zero */
++5:
 +	mov_imm	r12, 0xff000000		/* inf, shifted left for the sign */
 +        rjmp    __truncdfsf_return_op1  /* Return inf with the sign of op1 */
 + 
