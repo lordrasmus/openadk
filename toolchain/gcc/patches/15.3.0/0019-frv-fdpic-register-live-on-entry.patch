@@ -1,0 +1,52 @@
+frv: FDPIC register is live on entry
+
+Under FDPIC the caller passes the GOT pointer in gr15, but the entry
+block did not define it.  The DF_LIVE problem therefore never saw gr15
+live, and the post-reload if-conversion (frv_ifcvt_modify_tests) took
+it as a scratch register for constants of a conditional block, even
+where the GOT pointer was used afterwards:
+
+	setlos	0x8,gr15
+	...
+	add	gr7,gr15,gr7	; GOTOFF access with the clobbered gr15
+
+uClibc-ng's __psfs_parse_spec failed every format with a length
+modifier 'l' or 'hh' that way (sscanf "%lf" assigned nothing).
+bfin implements the same hook for the same register.
+
+--- a/gcc/config/frv/frv.cc	2026-10-26 10:45:43.672772141 +0100
++++ b/gcc/config/frv/frv.cc	2026-10-26 11:18:30.867046380 +0100
+@@ -398,6 +398,7 @@
+ static bool frv_frame_pointer_required		(void);
+ static bool frv_can_eliminate			(const int, const int);
+ static void frv_conditional_register_usage	(void);
++static void frv_extra_live_on_entry		(bitmap);
+ static void frv_trampoline_init			(rtx, tree, rtx);
+ static bool frv_class_likely_spilled_p 		(reg_class_t);
+ static unsigned int frv_hard_regno_nregs	(unsigned int, machine_mode);
+@@ -512,6 +513,9 @@
+ #undef TARGET_CONDITIONAL_REGISTER_USAGE
+ #define TARGET_CONDITIONAL_REGISTER_USAGE frv_conditional_register_usage
+ 
++#undef TARGET_EXTRA_LIVE_ON_ENTRY
++#define TARGET_EXTRA_LIVE_ON_ENTRY frv_extra_live_on_entry
++
+ #undef TARGET_TRAMPOLINE_INIT
+ #define TARGET_TRAMPOLINE_INIT frv_trampoline_init
+ 
+@@ -824,6 +828,15 @@
+ #endif
+ }
+ 
++/* Implement TARGET_EXTRA_LIVE_ON_ENTRY.  */
++
++static void
++frv_extra_live_on_entry (bitmap regs)
++{
++  if (TARGET_FDPIC)
++    bitmap_set_bit (regs, FDPIC_REGNO);
++}
++
+ 
+ /*
+  * Compute the stack frame layout
