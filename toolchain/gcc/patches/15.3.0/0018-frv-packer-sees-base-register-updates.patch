@@ -1,0 +1,29 @@
+frv: let the packer see base register updates
+
+frv_registers_update records the registers an insn sets through
+note_pattern_stores, which does not report the base register update
+of a PRE_MODIFY address (ldu, stu, stbu, ...).  A following insn
+that reads the base register was therefore packed into the same VLIW
+packet and read the old value:
+
+	stbu.p	gr0, @(gr21,gr4)
+	mov	gr21, gr20		; wants gr21 + gr4
+
+Seen as failing strcmp checks in uClibc-ng's tester at -O2.
+
+--- a/gcc/config/frv/frv.cc	2026-10-26 10:45:43.451766816 +0100
++++ b/gcc/config/frv/frv.cc	2026-10-26 10:45:43.672772141 +0100
+@@ -7127,6 +7127,13 @@
+       x = XEXP (x, 1);
+     }
+   note_pattern_stores (x, frv_registers_update_1, &flags);
++
++  /* note_pattern_stores does not see the base register update of
++     a load or store with update (ldu, stu, ...).  */
++  subrtx_iterator::array_type array;
++  FOR_EACH_SUBRTX (iter, array, x, NONCONST)
++    if (GET_RTX_CLASS (GET_CODE (*iter)) == RTX_AUTOINC)
++      frv_registers_update_1 (XEXP (*iter, 0), x, &flags);
+ }
+ 
+ 
