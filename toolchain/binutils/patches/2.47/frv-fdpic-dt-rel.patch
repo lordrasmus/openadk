@@ -1,0 +1,27 @@
+frv: FDPIC dynamic relocations are REL, say so in the dynamic tags
+
+Since binutils 2.35 (3084d7a27b8, "ELF: Add _bfd_elf_add_dynamic_tags")
+elf32_frvfdpic_size_dynamic_sections leaves the dynamic tags to the
+generic code, which picks DT_RELA/DT_RELASZ/DT_RELAENT and DT_PLTREL =
+DT_RELA from elf_backend_rela_plts_and_copies_p.  That defaults to
+elf_backend_default_use_rela_p, which FDPIC sets to 1, while the dynamic
+relocations it writes are REL (.rel.dyn, .rel.plt).  Before, the backend
+added DT_REL, DT_RELSZ, DT_RELENT and DT_PLTREL = DT_REL itself.
+
+The result: ld-uClibc.so has "RELA 0x0, RELASZ 0" next to a .rel.dyn
+with 58 entries, so the loader never relocates itself, and libc.so and
+every program say PLTREL = RELA.  Nothing dynamically linked runs.
+
+--- a/bfd/elf32-frv.c	2026-10-26 09:53:05.984135024 +0100
++++ b/bfd/elf32-frv.c	2026-10-26 09:53:06.264141914 +0100
+@@ -6867,6 +6867,10 @@
+ /* We use REL for dynamic relocations only.  */
+ #undef elf_backend_default_use_rela_p
+ #define elf_backend_default_use_rela_p	1
++/* ... so DT_PLTREL, DT_REL, DT_RELSZ and DT_RELENT describe them, not
++   the RELA tags _bfd_elf_add_dynamic_tags derives from the above.  */
++#undef elf_backend_rela_plts_and_copies_p
++#define elf_backend_rela_plts_and_copies_p	0
+ 
+ #undef elf_backend_omit_section_dynsym
+ #define elf_backend_omit_section_dynsym _frvfdpic_link_omit_section_dynsym
