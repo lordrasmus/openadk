@@ -17112,7 +17112,7 @@
 +		
 --- /dev/null
 +++ b/gcc/config/avr32/lib1funcs.S
-@@ -0,0 +1,2903 @@
+@@ -0,0 +1,2916 @@
 +/* Macro for moving immediate value to register. */	
 +.macro mov_imm	reg, imm
 +.if	(((\imm & 0xfffff) == \imm) || ((\imm | 0xfff00000) == \imm))
@@ -18169,6 +18169,9 @@
 +	/* If shift amount is 32 there are no bits from the msw that are lost. */
 +	moveq	lr, r8
 +	breq	0f	
++	/* r5 was computed from the unsaturated count; past 63 it would
++	   put a bit of op2 into the round bit instead of the sticky bits. */
++	rsub	r5, r6, 32
 +        /* first remember whether part that is lost contains any 1 bits ... */
 +        lsl     lr,r9,r5   /* save all lost bits from msw */
 +#if defined(L_avr32_f64_addsub)
@@ -19355,7 +19358,17 @@
 + 
 +__avr32_f32_add_res_of:
 +        /* We overflowed. Increase exponent and shift mantissa.*/
++#if defined(L_avr32_f32_addsub)
++	/* r11 holds the bits below the result, r8[7:0] among them; bit 8 of
++	   r8 drops out of the result now and becomes the round bit.  Keep the
++	   sticky bit. */
++	or	r11, r11, r11 << 1
++	bld	r8, 8
++	ror	r11
 +        lsr     r8, 1
++#else
++        lsr     r8, 1
++#endif
 +        sub     r10, -1
 + 
 +        /* Clear mantissa to set result to Inf if the exponent is 255. */
