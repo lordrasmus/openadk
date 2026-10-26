@@ -183,6 +183,22 @@ config ADK_TARGET_LIB_NEWLIB_GIT
 
 endchoice
 
+config ADK_TARGET_LIB_UCLIBC_NG_GIT_REPO
+	string "uClibc-ng git repository"
+	depends on ADK_TARGET_LIB_UCLIBC_NG_GIT
+	default "https://git.uclibc-ng.org/git/uclibc-ng.git"
+	help
+	  Repository to build uClibc-ng from, for example a fork.
+
+config ADK_TARGET_LIB_UCLIBC_NG_GIT_REF
+	string "uClibc-ng git commit"
+	depends on ADK_TARGET_LIB_UCLIBC_NG_GIT
+	default ""
+	help
+	  Commit to check out.  Empty builds the head of the default
+	  branch with the patches in toolchain/uclibc-ng/patches/git;
+	  a commit is built as it is, without patches.
+
 config ADK_TARGET_LIBC_UTILS
 	bool
 	default n if ADK_TARGET_ARCH_C6X
