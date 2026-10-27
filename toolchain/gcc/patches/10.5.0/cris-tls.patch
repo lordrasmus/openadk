@@ -1,0 +1,289 @@
+cris: thread-local storage for CRIS v32 and v10
+
+gcc has never generated TLS for CRIS, although binutils implements the
+CRIS TLS ABI since 2008 and configure already has an assembler test for
+it: variant II, the thread pointer in the upper 24 bits of $pid on v32.
+v10 has no such register, so the thread pointer is r6 there, reserved
+for it wherever TLS is enabled (the highest call-saved register without
+a role: r0 is the PIC register, r7 the static chain, r8 the frame
+pointer).  Older versions keep emulated TLS.  Generated are the models
+of an executable: local-exec via sym:TPOFF and initial-exec via sym:IE,
+or sym:TPOFFGOT with PIC, where gas does not take TPOFF.
+general-dynamic, and with it dlopen of a library with TLS, is not done.
+
+diff --git a/gcc/config/cris/cris-protos.h b/gcc/config/cris/cris-protos.h
+index 6f6d815..7c6cb5b 100644
+--- a/gcc/config/cris/cris-protos.h
++++ b/gcc/config/cris/cris-protos.h
+@@ -34,6 +34,8 @@ extern int cris_legitimate_pic_operand (rtx);
+ extern enum cris_symbol_type cris_symbol_type_of (const_rtx);
+ extern bool cris_valid_pic_const (const_rtx, bool);
+ extern bool cris_legitimate_constant_p (machine_mode, rtx);
++extern bool cris_tls_symbol_p (rtx);
++extern rtx cris_legitimize_tls_address (rtx);
+ extern bool cris_constant_index_p (const_rtx);
+ extern bool cris_base_p (const_rtx, bool);
+ extern bool cris_base_or_autoincr_p (const_rtx, bool);
+diff --git a/gcc/config/cris/cris.c b/gcc/config/cris/cris.c
+index 91cb63c..6894e03 100644
+--- a/gcc/config/cris/cris.c
++++ b/gcc/config/cris/cris.c
+@@ -277,6 +277,11 @@ int cris_cpu_version = CRIS_DEFAULT_CPU_VERSION;
+ #undef TARGET_OPTION_OVERRIDE
+ #define TARGET_OPTION_OVERRIDE cris_option_override
+ 
++#ifdef HAVE_AS_TLS
++#undef TARGET_HAVE_TLS
++#define TARGET_HAVE_TLS true
++#endif
++
+ #undef TARGET_ASM_TRAMPOLINE_TEMPLATE
+ #define TARGET_ASM_TRAMPOLINE_TEMPLATE cris_asm_trampoline_template
+ #undef TARGET_TRAMPOLINE_INIT
+@@ -524,6 +529,11 @@ cris_conditional_register_usage (void)
+   if (TARGET_HAS_MUL_INSNS)
+     fixed_regs[CRIS_MOF_REGNUM] = 0;
+ 
++  /* CRIS v10 has no register for the thread pointer, so r6 is reserved
++     for it wherever TLS is.  */
++  if (targetm.have_tls && !TARGET_V32)
++    fixed_regs[CRIS_TP_REGNUM] = call_used_regs[CRIS_TP_REGNUM] = 1;
++
+   /* On early versions, we must use the 16-bit condition-code register,
+      which has another name.  */
+   if (cris_cpu_version < 8)
+@@ -551,7 +561,8 @@ cris_cannot_force_const_mem (machine_mode mode ATTRIBUTE_UNUSED, rtx x)
+   return
+     t == cris_unspec
+     || t == cris_got_symbol
+-    || t == cris_rel_symbol;
++    || t == cris_rel_symbol
++    || t == cris_tls_symbol;
+ }
+ 
+ /* Given an rtx, return the text string corresponding to the CODE of X.
+@@ -2518,6 +2529,7 @@ cris_valid_pic_const (const_rtx x, bool any_operand)
+       case CRIS_UNSPEC_PLTGOTREAD:
+       case CRIS_UNSPEC_GOTREAD:
+       case CRIS_UNSPEC_GOTREL:
++      case CRIS_UNSPEC_TPOFFGOT:
+ 	return true;
+       default:
+ 	gcc_unreachable ();
+@@ -2535,6 +2547,8 @@ cris_symbol_type_of (const_rtx x)
+   switch (GET_CODE (x))
+     {
+     case SYMBOL_REF:
++      if (SYMBOL_REF_TLS_MODEL (x))
++	return cris_tls_symbol;
+       return flag_pic
+ 	? (SYMBOL_REF_LOCAL_P (x)
+ 	   ? cris_rel_symbol : cris_got_symbol)
+@@ -2574,6 +2588,84 @@ cris_symbol_type_of (const_rtx x)
+   gcc_unreachable ();
+ }
+ 
++/* True if X is a thread-local symbol, possibly plus an offset.  */
++
++bool
++cris_tls_symbol_p (rtx x)
++{
++  return ((SYMBOL_REF_P (x) || GET_CODE (x) == CONST)
++	  && cris_symbol_type_of (x) == cris_tls_symbol);
++}
++
++/* Return a register with the address of the thread-local symbol X
++   (possibly plus an offset).  The layout is TLS variant II with the
++   thread pointer in $pid, as binutils implements it for v32, and in r6
++   on v10.  Only the models
++   of an executable are generated: local-exec, and initial-exec for the
++   others, which is all a static program needs.  With PIC everything is
++   initial-exec: gas takes TPOFF only without --pic.  */
++
++rtx
++cris_legitimize_tls_address (rtx x)
++{
++  rtx sym = x, tp, off, res;
++  HOST_WIDE_INT offs = 0;
++
++  if (GET_CODE (x) == CONST)
++    {
++      sym = get_related_value (x);
++      offs = get_integer_term (x);
++    }
++  gcc_assert (SYMBOL_REF_P (sym) && SYMBOL_REF_TLS_MODEL (sym));
++
++  if (TARGET_V32)
++    {
++      tp = gen_reg_rtx (Pmode);
++      emit_insn (gen_cris_load_tp (tp));
++    }
++  else
++    tp = gen_rtx_REG (Pmode, CRIS_TP_REGNUM);
++
++  if (SYMBOL_REF_TLS_MODEL (sym) == TLS_MODEL_LOCAL_EXEC && !flag_pic)
++    {
++      /* The offset stays out of the constant: movsi takes a CONST of a
++	 PLUS for an address and loads it with lapc.  */
++      off = gen_rtx_UNSPEC (Pmode, gen_rtvec (1, sym), CRIS_UNSPEC_TPOFF);
++      off = force_reg (Pmode, gen_rtx_CONST (Pmode, off));
++    }
++  else
++    {
++      rtx addr, mem;
++
++      if (flag_pic)
++	{
++	  rtx got = force_reg (Pmode,
++			       gen_rtx_CONST (Pmode,
++					      gen_rtx_UNSPEC (Pmode,
++							      gen_rtvec (1, sym),
++							      CRIS_UNSPEC_TPOFFGOT)));
++	  crtl->uses_pic_offset_table = 1;
++	  addr = expand_binop (Pmode, add_optab, got, pic_offset_table_rtx,
++			       NULL_RTX, 0, OPTAB_LIB_WIDEN);
++	}
++      else
++	addr = force_reg (Pmode,
++			  gen_rtx_CONST (Pmode,
++					 gen_rtx_UNSPEC (Pmode,
++							 gen_rtvec (1, sym),
++							 CRIS_UNSPEC_IE)));
++      mem = gen_const_mem (Pmode, addr);
++      off = force_reg (Pmode, mem);
++    }
++
++  res = expand_binop (Pmode, add_optab, tp, off, NULL_RTX, 0,
++		      OPTAB_LIB_WIDEN);
++  if (offs != 0)
++    res = expand_binop (Pmode, add_optab, res, GEN_INT (offs), NULL_RTX, 0,
++			OPTAB_LIB_WIDEN);
++  return force_reg (Pmode, res);
++}
++
+ /* The LEGITIMATE_PIC_OPERAND_P worker.  */
+ 
+ int
+@@ -2645,6 +2737,7 @@ cris_asm_output_case_end (FILE *stream, int num, rtx_insn *table)
+ static void
+ cris_option_override (void)
+ {
++
+   if (cris_max_stackframe_str)
+     {
+       cris_max_stackframe = atoi (cris_max_stackframe_str);
+@@ -2751,6 +2844,11 @@ cris_option_override (void)
+       flag_no_function_cse = 1;
+     }
+ 
++  /* The thread pointer is in $pid on CRIS v32 and in r6, reserved for
++     it, on v10.  Older versions keep emulated TLS.  */
++  if (cris_cpu_version < CRIS_CPU_NG)
++    targetm.have_tls = false;
++
+   /* Set the per-function-data initializer.  */
+   init_machine_status = cris_init_machine_status;
+ }
+@@ -4055,6 +4153,18 @@ cris_output_addr_const_extra (FILE *file, rtx xconst)
+ 	    fprintf (file, CRIS_GOTPLT_SUFFIX);
+ 	  break;
+ 
++	case CRIS_UNSPEC_TPOFF:
++	  fprintf (file, ":TPOFF");
++	  break;
++
++	case CRIS_UNSPEC_IE:
++	  fprintf (file, ":IE");
++	  break;
++
++	case CRIS_UNSPEC_TPOFFGOT:
++	  fprintf (file, ":TPOFFGOT");
++	  break;
++
+ 	default:
+ 	  gcc_unreachable ();
+ 	}
+diff --git a/gcc/config/cris/cris.h b/gcc/config/cris/cris.h
+index 4eb5105..2194f51 100644
+--- a/gcc/config/cris/cris.h
++++ b/gcc/config/cris/cris.h
+@@ -800,7 +800,8 @@ enum cris_symbol_type
+     cris_rel_symbol = 2,
+     cris_got_symbol_needing_fixup = 3,
+     cris_unspec = 7,
+-    cris_offsettable_symbol = 8
++    cris_offsettable_symbol = 8,
++    cris_tls_symbol = 9
+   };
+ 
+ #define PIC_OFFSET_TABLE_REGNUM (flag_pic ? CRIS_GOT_REGNUM : INVALID_REGNUM)
+diff --git a/gcc/config/cris/cris.md b/gcc/config/cris/cris.md
+index fd8355c..8dc5cf0 100644
+--- a/gcc/config/cris/cris.md
++++ b/gcc/config/cris/cris.md
+@@ -94,11 +94,24 @@
+ 
+    ;; Swap all 32 bits of the operand; 31 <=> 0, 30 <=> 1...
+    CRIS_UNSPEC_SWAP_BITS
++
++   ;; The thread pointer, the upper 24 bits of $pid (v32 only).
++   CRIS_UNSPEC_TP
++
++   ;; Offset of a TLS symbol from the thread pointer: "sym:TPOFF".
++   CRIS_UNSPEC_TPOFF
++
++   ;; Absolute address of the GOT entry with the offset: "sym:IE".
++   CRIS_UNSPEC_IE
++
++   ;; GOT-relative address of that entry: "sym:TPOFFGOT".
++   CRIS_UNSPEC_TPOFFGOT
+   ])
+ 
+ ;; Register numbers.
+ (define_constants
+   [(CRIS_GOT_REGNUM 0)
++   (CRIS_TP_REGNUM 6)
+    (CRIS_STATIC_CHAIN_REGNUM 7)
+    (CRIS_FP_REGNUM 8)
+    (CRIS_SP_REGNUM 14)
+@@ -912,6 +925,17 @@
+   return "clear<m> [%2=%0%S1]";
+ })
+ 
++;; The thread pointer lives in the upper 24 bits of $pid; the low 8 bits
++;; are the MMU context.
++
++(define_insn "cris_load_tp"
++  [(set (match_operand:SI 0 "register_operand" "=r")
++	(unspec:SI [(const_int 0)] CRIS_UNSPEC_TP))]
++  "TARGET_V32"
++  "move $pid,%0\;lsrq 8,%0\;lslq 8,%0"
++  [(set_attr "cc" "clobber")
++   (set_attr "length" "6")])
++
+ ;; Normal move patterns from SI on.
+ 
+ (define_expand "movsi"
+@@ -922,6 +946,12 @@
+ {
+   enum cris_symbol_type t;
+ 
++  if (cris_tls_symbol_p (operands[1]))
++    {
++      emit_move_insn (operands[0], cris_legitimize_tls_address (operands[1]));
++      DONE;
++    }
++
+   /* If the output goes to a MEM, make sure we have zero or a register as
+      input.  */
+   if (MEM_P (operands[0])
+@@ -1161,6 +1191,9 @@
+ 	gcc_assert (GET_CODE (tem) == UNSPEC);
+ 	switch (XINT (tem, 1))
+ 	  {
++	  case CRIS_UNSPEC_TPOFFGOT:
++	    return "move.d %1,%0";
++
+ 	  case CRIS_UNSPEC_GOTREAD:
+ 	  case CRIS_UNSPEC_PLTGOTREAD:
+ 	    /* Using sign-extend mostly to be consistent with the

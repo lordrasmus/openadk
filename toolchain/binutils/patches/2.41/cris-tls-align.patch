@@ -1,0 +1,58 @@
+cris: place the TLS block for the whole TLS segment's alignment
+
+ld computed thread pointer offsets from tls_size, which elflink.c
+rounds to the alignment of the first TLS section only.  The C library
+puts the block below the thread pointer rounded to the alignment of the
+TLS segment (TLS variant II), so with a .tbss more aligned than .tdata
+every access was off by the difference.
+
+diff --git a/bfd/elf32-cris.c b/bfd/elf32-cris.c
+index 85e78ae..c44205f 100644
+--- a/bfd/elf32-cris.c
++++ b/bfd/elf32-cris.c
+@@ -965,6 +965,27 @@ cris_final_link_relocate (reloc_howto_type *  howto,
+    "additional relocation overflows omitted from the output".  */
+ static int additional_relocation_error_msg_count = 10;
+ 
++/* The size of the TLS block of the program, which sits right below the
++   thread pointer.  The C library places it there aligned for the whole
++   TLS segment (TLS variant II), so round to the strictest alignment of
++   any TLS section, not just to that of the first one.  */
++
++static bfd_vma
++cris_tls_block_size (struct bfd_link_info *info)
++{
++  struct elf_link_hash_table *htab = elf_hash_table (info);
++  unsigned int align = 0;
++  asection *sec;
++
++  for (sec = htab->tls_sec;
++       sec != NULL && (sec->flags & SEC_THREAD_LOCAL) != 0;
++       sec = sec->next)
++    if (sec->alignment_power > align)
++      align = sec->alignment_power;
++
++  return align_power (htab->tls_size, align);
++}
++
+ /* Relocate an CRIS ELF section.  See elf32-fr30.c, from where this was
+    copied, for further comments.  */
+ 
+@@ -1839,7 +1860,7 @@ cris_elf_relocate_section (bfd *output_bfd ATTRIBUTE_UNUSED,
+ 	      /* The symbol is defined in the program, so just write
+ 		 the -prog_tls_size+known_tpoffset into the GOT.  */
+ 	      relocation -= elf_hash_table (info)->tls_sec->vma;
+-	      relocation -= elf_hash_table (info)->tls_size;
++	      relocation -= cris_tls_block_size (info);
+ 
+ 	      if (h != NULL)
+ 		off = h->got.offset;
+@@ -1969,7 +1990,7 @@ cris_elf_relocate_section (bfd *output_bfd ATTRIBUTE_UNUSED,
+ 	  relocation -= elf_hash_table (info)->tls_sec == NULL
+ 	    ? 0
+ 	    : (elf_hash_table (info)->tls_sec->vma
+-	       + elf_hash_table (info)->tls_size);
++	       + cris_tls_block_size (info));
+ 
+ 	  /* The TLS-relative offset is the relocation.  */
+ 	  break;
