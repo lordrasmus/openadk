@@ -1,0 +1,170 @@
+cris: unwind through signal frames on Linux
+
+libgcc had no MD_FALLBACK_FRAME_STATE_FOR for CRIS, so the unwinder
+stopped at the sigreturn trampoline: thread cancellation, which unwinds
+from the SIGCANCEL handler, could not run the cleanups of code built
+with -fexceptions.  Recognize "movu.w <nr>,$r9; break 13" with
+__NR_sigreturn or __NR_rt_sigreturn and describe the interrupted
+context from the kernel's sigcontext; the interrupted PC goes into its
+own column (DWARF_ALT_FRAME_RETURN_COLUMN), so SRP keeps its value.
+
+diff --git a/gcc/config/cris/linux.h b/gcc/config/cris/linux.h
+index 3bb6f68..78fa8f8 100644
+--- a/gcc/config/cris/linux.h
++++ b/gcc/config/cris/linux.h
+@@ -102,6 +102,11 @@ along with GCC; see the file COPYING3.  If not see
+ #undef CRIS_DEFAULT_CPU_VERSION
+ #define CRIS_DEFAULT_CPU_VERSION CRIS_CPU_NG
+ 
++/* The column the signal frame unwinder of libgcc (linux-unwind.h) puts
++   the interrupted PC in; SRP keeps its own value there.  One beyond the
++   hard registers, which the unwinder's tables leave room for.  */
++#define DWARF_ALT_FRAME_RETURN_COLUMN FIRST_PSEUDO_REGISTER
++
+ #define GLIBC_DYNAMIC_LINKER "/lib/ld.so.1"
+ 
+ #undef CRIS_LINK_SUBTARGET_SPEC
+diff --git a/libgcc/config.host b/libgcc/config.host
+index 21240f7..c75963b 100644
+--- a/libgcc/config.host
++++ b/libgcc/config.host
+@@ -613,6 +613,7 @@ cris-*-elf)
+ 	;;
+ cris-*-linux* | crisv32-*-linux*)
+ 	tmake_file="$tmake_file cris/t-cris t-softfp-sfdf t-softfp cris/t-linux"
++	md_unwind_header=cris/linux-unwind.h
+ 	;;
+ csky-*-elf*)
+ 	tmake_file="csky/t-csky t-fdpbit"
+diff --git a/libgcc/config/cris/linux-unwind.h b/libgcc/config/cris/linux-unwind.h
+new file mode 100644
+index 0000000..c0155a0
+--- /dev/null
++++ b/libgcc/config/cris/linux-unwind.h
+@@ -0,0 +1,126 @@
++/* DWARF2 EH unwinding support for CRIS Linux.
++   Copyright (C) 2026 Free Software Foundation, Inc.
++
++   This file is part of GCC.
++
++   GCC is free software; you can redistribute it and/or modify it
++   under the terms of the GNU General Public License as published by
++   the Free Software Foundation; either version 3, or (at your option)
++   any later version.
++
++   GCC is distributed in the hope that it will be useful, but WITHOUT
++   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
++   or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public
++   License for more details.
++
++   Under Section 7 of GPL version 3, you are granted additional
++   permissions described in the GCC Runtime Library Exception, version
++   3.1, as published by the Free Software Foundation.
++
++   You should have received a copy of the GNU General Public License and
++   a copy of the GCC Runtime Library Exception along with this program;
++   see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
++   <http://www.gnu.org/licenses/>.  */
++
++#ifndef inhibit_libc
++
++/* Recognize the sigreturn trampoline the kernel returns a signal
++   handler to, and describe the interrupted context from the signal frame
++   it sits behind.  */
++
++#include <signal.h>
++#include <asm/unistd.h>
++
++/* movu.w <nr>,$r9; break 13 -- on the stack for CRIS v10, in the signal
++   return page for v32 (sigreturn at +0, rt_sigreturn at +6).  */
++#define CRIS_MOVU_W_R9	0x9c5f
++#define CRIS_BREAK_13	0xe93d
++
++/* The kernel's frames.  The handler is entered with the stack pointer
++   at the frame, so the frame is the CFA of the handler.  */
++struct cris_kernel_ucontext
++{
++  unsigned long uc_flags;
++  void *uc_link;
++  stack_t uc_stack;
++  struct sigcontext uc_mcontext;
++};
++
++struct cris_rt_sigframe
++{
++  void *pinfo;
++  void *puc;
++  siginfo_t info;
++  struct cris_kernel_ucontext uc;
++};
++
++#define MD_FALLBACK_FRAME_STATE_FOR cris_fallback_frame_state
++
++static _Unwind_Reason_Code
++cris_fallback_frame_state (struct _Unwind_Context *context,
++			   _Unwind_FrameState *fs)
++{
++  unsigned short *pc = (unsigned short *) context->ra;
++  struct sigcontext *sc;
++  struct pt_regs *regs;
++  _Unwind_Ptr new_cfa;
++
++  if (pc[0] != CRIS_MOVU_W_R9 || pc[2] != CRIS_BREAK_13)
++    return _URC_END_OF_STACK;
++
++  if (pc[1] == __NR_sigreturn)
++    sc = (struct sigcontext *) context->cfa;
++  else if (pc[1] == __NR_rt_sigreturn)
++    sc = &((struct cris_rt_sigframe *) context->cfa)->uc.uc_mcontext;
++  else
++    return _URC_END_OF_STACK;
++
++  regs = &sc->regs;
++  new_cfa = sc->usp;
++  fs->regs.cfa_how = CFA_REG_OFFSET;
++  fs->regs.cfa_reg = __LIBGCC_STACK_POINTER_REGNUM__;
++  fs->regs.cfa_offset = new_cfa - (_Unwind_Ptr) context->cfa;
++
++#define CRIS_SAVED(column, field)					\
++  do									\
++    {									\
++      fs->regs.reg[column].how = REG_SAVED_OFFSET;			\
++      fs->regs.reg[column].loc.offset					\
++	= (_Unwind_Ptr) &regs->field - new_cfa;				\
++    }									\
++  while (0)
++
++  CRIS_SAVED (0, r0);
++  CRIS_SAVED (1, r1);
++  CRIS_SAVED (2, r2);
++  CRIS_SAVED (3, r3);
++  CRIS_SAVED (4, r4);
++  CRIS_SAVED (5, r5);
++  CRIS_SAVED (6, r6);
++  CRIS_SAVED (7, r7);
++  CRIS_SAVED (8, r8);
++  CRIS_SAVED (9, r9);
++  CRIS_SAVED (10, r10);
++  CRIS_SAVED (11, r11);
++  CRIS_SAVED (12, r12);
++  CRIS_SAVED (13, r13);
++#ifdef __arch_v32
++  CRIS_SAVED (15, acr);
++#endif
++  CRIS_SAVED (16, srp);
++  CRIS_SAVED (17, mof);
++
++  /* The interrupted PC gets a column of its own: SRP keeps its value.  */
++#ifdef __arch_v32
++  CRIS_SAVED (__LIBGCC_DWARF_ALT_FRAME_RETURN_COLUMN__, erp);
++#else
++  CRIS_SAVED (__LIBGCC_DWARF_ALT_FRAME_RETURN_COLUMN__, irp);
++#endif
++#undef CRIS_SAVED
++
++  fs->retaddr_column = __LIBGCC_DWARF_ALT_FRAME_RETURN_COLUMN__;
++  fs->signal_frame = 1;
++  return _URC_NO_REASON;
++}
++
++#endif /* ifdef inhibit_libc  */
