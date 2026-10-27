@@ -1,0 +1,27 @@
+diff -Nru a/libgcc/config/ia64/t-linux-static-unwind b/libgcc/config/ia64/t-linux-static-unwind
+--- a/libgcc/config/ia64/t-linux-static-unwind	1970-01-01 00:00:00.000000000 +0000
++++ b/libgcc/config/ia64/t-linux-static-unwind	2026-10-27 09:27:29.926310010 +0000
+@@ -0,0 +1,5 @@
++# Without a shared libgcc there is no libunwind.so to forward to; build
++# the IA-64 unwinder into libgcc.a.
++LIB2ADDEH = $(srcdir)/config/ia64/unwind-ia64.c \
++  $(srcdir)/config/ia64/fde-glibc.c \
++  $(srcdir)/unwind-sjlj.c $(srcdir)/unwind-c.c
+diff -Nru a/libgcc/config.host b/libgcc/config.host
+--- a/libgcc/config.host	2026-10-27 09:27:29.914309357 +0000
++++ b/libgcc/config.host	2026-10-27 09:27:29.926310010 +0000
+@@ -969,7 +969,13 @@
+ 	extra_parts="crtbegin.o crtend.o crtbeginS.o crtendS.o crtfastmath.o"
+ 	tmake_file="$tmake_file ia64/t-ia64 ia64/t-ia64-elf t-crtfm t-softfp-tf ia64/t-softfp t-softfp ia64/t-softfp-compat ia64/t-eh-ia64 t-libunwind ia64/t-linux"
+ 	if test x$with_system_libunwind != xyes ; then
+-		tmake_file="${tmake_file} t-libunwind-elf ia64/t-linux-libunwind"
++		if test x$enable_shared = xyes ; then
++			tmake_file="${tmake_file} t-libunwind-elf ia64/t-linux-libunwind"
++		else
++			# No libgcc_s to pull in libunwind: put the unwinder
++			# itself into libgcc.a.
++			tmake_file="${tmake_file} ia64/t-linux-static-unwind"
++		fi
+ 	fi
+ 	md_unwind_header=ia64/linux-unwind.h
+ 	;;
