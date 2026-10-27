@@ -426,6 +426,13 @@ ifeq ($(ADK_TARGET_WITH_MMU)$(ADK_TARGET_BINFMT_ELF)$(ADK_TARGET_USE_STATIC_LIBS
 		$(MAKE) ${GCC_MAKEOPTS} all-gcc
 	$(SED) '/^\*link_gcc_c_sequence:/{n;s/.*/--start-group %G %{!nolibc:%L} --end-group/;}' \
 		$(GCC_BUILD_DIR_FINAL)/gcc/specs
+ifeq ($(ADK_TARGET_ARCH_M68K),y)
+	# The m68k uapi headers (sigcontext, EXEC_PAGESIZE) depend on
+	# __uClinux__, which a noMMU kernel is built with.  The uclinux
+	# target name defines it for FLAT; on ELF it is still linux.
+	$(SED) '/^\*cpp:/{n;s/$$/ -D__uClinux__/;}' \
+		$(GCC_BUILD_DIR_FINAL)/gcc/specs
+endif
 endif
 	cd $(GCC_BUILD_DIR_FINAL); \
 		PATH='$(TARGET_PATH)' \
