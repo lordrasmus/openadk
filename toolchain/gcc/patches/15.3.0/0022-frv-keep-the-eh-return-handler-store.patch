@@ -1,0 +1,47 @@
+diff -Nru a/gcc/config/frv/frv-protos.h b/gcc/config/frv/frv-protos.h
+--- a/gcc/config/frv/frv-protos.h	2026-11-05 00:00:00.000000000 +0000
++++ b/gcc/config/frv/frv-protos.h	2026-11-05 00:00:00.000000000 +0000
+@@ -42,6 +42,7 @@
+ extern int frv_expand_block_clear		(rtx *);
+ extern rtx frv_dynamic_chain_address		(rtx);
+ extern rtx frv_return_addr_rtx			(int, rtx);
++extern rtx frv_eh_return_handler_rtx		(void);
+ extern rtx frv_index_memory			(rtx, machine_mode, int);
+ extern const char *frv_asm_output_opcode
+ 				 	(FILE *, const char *);
+diff -Nru a/gcc/config/frv/frv.cc b/gcc/config/frv/frv.cc
+--- a/gcc/config/frv/frv.cc	2026-11-05 00:00:00.000000000 +0000
++++ b/gcc/config/frv/frv.cc	2026-11-05 00:00:00.000000000 +0000
+@@ -2446,6 +2446,20 @@
+   return gen_rtx_MEM (Pmode, plus_constant (Pmode, frame, 8));
+ }
+ 
++/* __builtin_eh_return stores the handler address into the return address
++   slot, and only the epilogue reads it back.  Before the epilogue exists,
++   dse1 sees no load and deletes the store, and the unwinder then returns to
++   the old return address instead of the landing pad.  A volatile MEM keeps
++   the store, as for CRIS, PA and Visium (PR middle-end/113109).  */
++
++rtx
++frv_eh_return_handler_rtx (void)
++{
++  rtx ret = frv_return_addr_rtx (0, frame_pointer_rtx);
++  MEM_VOLATILE_P (ret) = 1;
++  return ret;
++}
++
+ /* Given a memory reference MEMREF, interpret the referenced memory as
+    an array of MODE values, and return a reference to the element
+    specified by INDEX.  Assume that any pre-modification implicit in
+diff -Nru a/gcc/config/frv/frv.h b/gcc/config/frv/frv.h
+--- a/gcc/config/frv/frv.h	2026-11-05 00:00:00.000000000 +0000
++++ b/gcc/config/frv/frv.h	2026-11-05 00:00:00.000000000 +0000
+@@ -540,7 +540,7 @@
+ #define EH_RETURN_DATA_REGNO(N)	((N) <= (LAST_EH_REGNUM - FIRST_EH_REGNUM)? \
+ 				 (N) + FIRST_EH_REGNUM : INVALID_REGNUM)
+ #define EH_RETURN_STACKADJ_RTX	gen_rtx_REG (SImode, STACKADJ_REGNO)
+-#define EH_RETURN_HANDLER_RTX   RETURN_ADDR_RTX (0, frame_pointer_rtx)
++#define EH_RETURN_HANDLER_RTX   frv_eh_return_handler_rtx ()
+ 
+ #define EPILOGUE_USES(REGNO) ((REGNO) == LR_REGNO)
+ 
