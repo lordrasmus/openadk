@@ -1,0 +1,17 @@
+diff -Nru a/libgcc/config/ia64/linux-unwind.h b/libgcc/config/ia64/linux-unwind.h
+--- a/libgcc/config/ia64/linux-unwind.h	2026-11-05 00:00:00.000000000 +0000
++++ b/libgcc/config/ia64/linux-unwind.h	2026-11-05 00:00:00.000000000 +0000
+@@ -26,9 +26,11 @@
+    state data appropriately.  See unwind-ia64.c for the structs.  */
+ 
+ /* This works only for glibc-2.3 and later, because sigcontext is different
+-   in glibc-2.2.4.  */
++   in glibc-2.2.4.  uClibc-ng says it is glibc 2.2 but takes struct
++   sigcontext from the kernel.  */
+ 
+-#if __GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 3)
++#if defined __UCLIBC__ \
++    || __GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 3)
+ #include <signal.h>
+ #include <sys/ucontext.h>
+ 
