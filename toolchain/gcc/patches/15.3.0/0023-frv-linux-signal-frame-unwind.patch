@@ -1,0 +1,167 @@
+diff -Nru a/gcc/config/frv/frv.h b/gcc/config/frv/frv.h
+--- a/gcc/config/frv/frv.h	2026-11-05 00:00:00.000000000 +0000
++++ b/gcc/config/frv/frv.h	2026-11-05 00:00:00.000000000 +0000
+@@ -1717,6 +1717,12 @@
+ #define DWARF2_UNWIND_INFO 1
+ 
+ #define DWARF_FRAME_RETURN_COLUMN DWARF_FRAME_REGNUM (LR_REGNO)
++
++/* Signal frames (libgcc/config/frv/linux-unwind.h) record the interrupted
++   PC in this column, one past the hard registers, because the LR column
++   must keep the interrupted LR.  Declaring it makes
++   init_dwarf_reg_size_table size the column.  */
++#define DWARF_ALT_FRAME_RETURN_COLUMN FIRST_PSEUDO_REGISTER
+ 
+ /* Assembler Commands for Alignment.  */
+ 
+diff -Nru a/libgcc/config/frv/linux-unwind.h b/libgcc/config/frv/linux-unwind.h
+--- a/libgcc/config/frv/linux-unwind.h	2026-11-05 00:00:00.000000000 +0000
++++ b/libgcc/config/frv/linux-unwind.h	2026-11-05 00:00:00.000000000 +0000
+@@ -0,0 +1,136 @@
++/* DWARF2 EH unwinding support for FR-V Linux.
++   Copyright (C) 2026 Free Software Foundation, Inc.
++
++   This file is part of GCC.
++
++   GCC is free software; you can redistribute it and/or modify
++   it under the terms of the GNU General Public License as published by
++   the Free Software Foundation; either version 3, or (at your option)
++   any later version.
++
++   GCC is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++   GNU General Public License for more details.
++
++   Under Section 7 of GPL version 3, you are granted additional
++   permissions described in the GCC Runtime Library Exception, version
++   3.1, as published by the Free Software Foundation.
++
++   You should have received a copy of the GNU General Public License and
++   a copy of the GCC Runtime Library Exception along with this program;
++   see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
++   <http://www.gnu.org/licenses/>.  */
++
++#ifndef inhibit_libc
++
++/* Do code reading to identify a signal frame, and set the frame state
++   data appropriately.  See unwind-dw2.c for the structs.  */
++
++#include <asm/sigcontext.h>
++#include <asm/unistd.h>
++
++#define MD_FALLBACK_FRAME_STATE_FOR frv_fallback_frame_state
++
++/* The head of the kernel's struct rt_sigframe
++   (arch/frv/kernel/signal.c).  */
++struct frv_rt_sigframe_head
++{
++  void *pretcode;
++  int sig;
++  void *pinfo;
++  void *puc;
++};
++
++/* The head of the kernel's struct sigframe, used without SA_SIGINFO.  */
++struct frv_sigframe_head
++{
++  void *pretcode;
++  int sig;
++  struct sigcontext sc;
++};
++
++/* The kernel's struct ucontext up to uc_mcontext.  */
++struct frv_kernel_ucontext
++{
++  unsigned long uc_flags;
++  void *uc_link;
++  void *ss_sp;
++  int ss_flags;
++  unsigned long ss_size;
++  struct sigcontext uc_mcontext;
++};
++
++/* DWARF column of the link register (LR_REGNO in gcc/config/frv/frv.h).  */
++#define FRV_LR_COLUMN 169
++
++static _Unwind_Reason_Code
++frv_fallback_frame_state (struct _Unwind_Context *context,
++			  _Unwind_FrameState *fs)
++{
++  const unsigned int *pc = (const unsigned int *) context->ra;
++  struct sigcontext *sc;
++  struct user_int_regs *regs;
++  _Unwind_Ptr new_cfa;
++  int i;
++
++  if ((unsigned long) pc < 4096)
++    return _URC_END_OF_STACK;
++
++  /* The kernel writes the trampoline into the signal frame and points
++     the handler's LR at it:
++
++	setlos	#__NR_rt_sigreturn, gr7		(or __NR_sigreturn)
++	tira	gr0, #0
++
++     The handler is entered with sp at the frame, which is its CFA.  */
++  if (pc[1] != 0xc0700000)
++    return _URC_END_OF_STACK;
++  if (pc[0] == (0x8efc0000 | __NR_rt_sigreturn))
++    {
++      struct frv_rt_sigframe_head *frame = context->cfa;
++
++      if (frame->pretcode != (void *) pc)
++	return _URC_END_OF_STACK;
++      sc = &((struct frv_kernel_ucontext *) frame->puc)->uc_mcontext;
++    }
++  else if (pc[0] == (0x8efc0000 | __NR_sigreturn))
++    {
++      struct frv_sigframe_head *frame = context->cfa;
++
++      if (frame->pretcode != (void *) pc)
++	return _URC_END_OF_STACK;
++      sc = &frame->sc;
++    }
++  else
++    return _URC_END_OF_STACK;
++
++  regs = &sc->sc_context.i;
++
++  new_cfa = regs->gr[1];
++  fs->regs.cfa_how = CFA_REG_OFFSET;
++  fs->regs.cfa_reg = 1;		/* gr1, the stack pointer.  */
++  fs->regs.cfa_offset = new_cfa - (_Unwind_Ptr) context->cfa;
++
++  /* gr[0] shares its slot with tbr; gr0 itself is always zero.  */
++  for (i = 1; i < 64; i++)
++    {
++      fs->regs.how[i] = REG_SAVED_OFFSET;
++      fs->regs.reg[i].loc.offset = (_Unwind_Ptr) &regs->gr[i] - new_cfa;
++    }
++
++  fs->regs.how[FRV_LR_COLUMN] = REG_SAVED_OFFSET;
++  fs->regs.reg[FRV_LR_COLUMN].loc.offset = (_Unwind_Ptr) &regs->lr - new_cfa;
++
++  /* The interrupted PC goes into the alternate return column, because the
++     LR column above keeps the interrupted LR.  */
++  fs->regs.how[__LIBGCC_DWARF_ALT_FRAME_RETURN_COLUMN__] = REG_SAVED_OFFSET;
++  fs->regs.reg[__LIBGCC_DWARF_ALT_FRAME_RETURN_COLUMN__].loc.offset
++    = (_Unwind_Ptr) &regs->pc - new_cfa;
++  fs->retaddr_column = __LIBGCC_DWARF_ALT_FRAME_RETURN_COLUMN__;
++  fs->signal_frame = 1;
++
++  return _URC_NO_REASON;
++}
++
++#endif
+diff -Nru a/libgcc/config.host b/libgcc/config.host
+--- a/libgcc/config.host	2026-11-05 00:00:00.000000000 +0000
++++ b/libgcc/config.host	2026-11-05 00:00:00.000000000 +0000
+@@ -684,6 +684,7 @@
+ frv-*-*linux*)
+ 	tmake_file="$tmake_file frv/t-frv frv/t-linux t-fdpbit"
+ 	tm_file="$tm_file frv/elf-lib.h frv/frv-abi.h"
++	md_unwind_header=frv/linux-unwind.h
+ 	;;
+ ft32-*-elf)
+ 	tmake_file="ft32/t-ft32 t-softfp-sfdf t-softfp-excl t-softfp"
