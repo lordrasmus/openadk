@@ -192,7 +192,12 @@ ifeq ($(ADK_TARGET_CPU_CF),y)
 GCC_CONFOPTS+=		--with-arch=cf
 GCC_INITIAL_CONFOPTS+=	--enable-multilib
 ifeq ($(ADK_TARGET_BINFMT_ELF)$(ADK_TARGET_WITH_MMU),y)
-GCC_FINAL_CONFOPTS+=	--disable-multilib --disable-threads --disable-libatomic
+GCC_FINAL_CONFOPTS+=	--disable-multilib --disable-libatomic
+# With NPTL libgcc needs threads: without them its unwinder does not lock
+# the FDE registry, and threads cancelled at once corrupt it.
+ifneq ($(ADK_TARGET_WITH_NPTL),y)
+GCC_FINAL_CONFOPTS+=	--disable-threads
+endif
 endif
 else
 GCC_INITIAL_CONFOPTS+=	--disable-multilib
