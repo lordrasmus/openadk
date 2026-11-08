@@ -1,0 +1,97 @@
+From: Ramin Moussavi <lordrasmus@gmail.com>
+Date: Sun, 8 Nov 2026 00:00:00 +0100
+Subject: [PATCH] arc: fix Inf and NaN operands in the hand-written __divdf3
+
+libgcc/config/arc/ieee-754/divdf3.S got three special cases wrong, all
+of them on cores without an FPU (arc700 here):
+
+- x / Inf returned Inf instead of a signed zero.  .Linf_nan_dbl1 took
+  the high word of the divisor for the result, although its own comment
+  says x/Inf -> 0.  fdlibm computes tanh(inf), erf(inf), j0(inf) and
+  scalb(x, -inf) through 1/x or x/inf, so all of them came out as Inf.
+- NaN / zero and NaN / denormal returned Inf: .Ldenorm_dbl1 jumps to
+  .Linf_NaN without looking at the dividend.
+- zero / NaN and denormal / NaN returned zero: .Ldenorm_dbl0 jumps to
+  .Lret0_NaN without looking at the divisor.
+
+The new code sits behind .L7ff00000: in front of __divdf3 it would push
+the short branches to .Ldenorm_dbl0 out of range, and inside it it would
+move .Ldivtab and .L7ff00000.
+
+Checked on arc700 under qemu against the host's division: all 121
+combinations of +-0, +-Inf, NaN, denormals and normal numbers agree
+(16 differed before), and 100000 random divisions give the same result
+with and without the change.
+
+diff -Nur gcc-12.5.0.orig/libgcc/config/arc/ieee-754/divdf3.S gcc-12.5.0/libgcc/config/arc/ieee-754/divdf3.S
+--- gcc-12.5.0.orig/libgcc/config/arc/ieee-754/divdf3.S
++++ gcc-12.5.0/libgcc/config/arc/ieee-754/divdf3.S
+@@ -151,6 +151,8 @@
+ 	asl r6,r6,20
+ 
+ .Linf_NaN:
++	b .Lnan_check_dbl0
++.Linf_NaN_1:
+ 	tst_s DBL0L,DBL0L ; 0/0 -> NaN
+ 	xor_s DBL1H,DBL1H,DBL0H
+ 	bclr.eq.f DBL0H,DBL0H,31
+@@ -162,6 +164,8 @@
+ 	or DBL0H,DBL0H,r9
+ 	.balign 4
+ .Lret0_NaN:
++	b .Lnan_check_dbl1
++.Lret0_NaN_1:
+ 	xor_s DBL1H,DBL1H,DBL0H
+ 	cmp_s r12,r9
+ 	mov_s DBL0L,0
+@@ -170,13 +174,7 @@
+ 	j_s.d [blink]
+ 	sub.hi DBL0H,DBL0H,1
+ .Linf_nan_dbl1: ; Inf/Inf -> NaN x/Inf-> 0 x/NaN -> NaN
+-	not_s DBL0L,DBL1H
+-	cmp r6,r9
+-	sub_s.ne DBL0L,DBL0L,DBL0L
+-	tst_s DBL0H,DBL0H
+-	add_s DBL0H,DBL1H,DBL0L
+-	j_s.d [blink]
+-	bxor.mi DBL0H,DBL0H,31
++	b .Linf_nan_dbl1_far
+ .Linf_nan_dbl0:
+ 	tst_s DBL1H,DBL1H
+ 	j_s.d [blink]
+@@ -432,4 +430,35 @@
+ 	.long 0x407c07bd
+ .L7ff00000:
+ 	.long 0x7ff00000
++
++/* Kept behind the constant: in front of __divdf3 they would push the
++   short branches to .Ldenorm_dbl0 out of range, and inside it they
++   would move .Ldivtab and .L7ff00000.  */
++.Linf_nan_dbl1_far:
++	asl r12,DBL1H,12
++	or.f 0,r12,DBL1L ; divisor NaN: return it, quieted
++	bne .Lnan_dbl1
++	breq r6,r9,.Lnan_dbl0 ; Inf/Inf, NaN/Inf
++	xor DBL0H,DBL0H,DBL1H ; x/Inf: zero with the sign of the quotient
++	lsr DBL0H,DBL0H,31
++	asl DBL0H,DBL0H,31
++	j_s.d [blink]
++	mov_s DBL0L,0
++.Lnan_check_dbl0: ; NaN / zero or denorm -> NaN
++	bclr r11,DBL0H,31
++	cmp r11,r9
++	cmp.eq DBL0L,0
++	bls .Linf_NaN_1
++.Lnan_dbl0:
++	j_s.d [blink]
++	bset DBL0H,DBL0H,19
++.Lnan_check_dbl1: ; zero or denorm / NaN -> NaN
++	bclr r11,DBL1H,31
++	cmp r11,r9
++	cmp.eq DBL1L,0
++	bls .Lret0_NaN_1
++.Lnan_dbl1:
++	mov DBL0L,DBL1L
++	j_s.d [blink]
++	bset DBL0H,DBL1H,19
+ 	ENDFUNC(__divdf3)
