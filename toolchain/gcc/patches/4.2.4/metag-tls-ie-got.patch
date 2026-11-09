@@ -1,0 +1,47 @@
+metag: take initial-exec through the GOT for variables of shared libraries
+
+Without -fPIC, initial-exec put the thread pointer offset into the code
+(@TLSIENONPIC).  That offset exists at link time only for a variable of the
+executable itself.  An executable gets initial-exec for every extern
+__thread variable, also for one defined in a shared library, and there the
+linker resolved the offset to 0: the program read the TCB instead of the
+variable (uClibc-ng's tst-tls-at-ctor, tst-tls10 to tst-tls12).
+
+Load the offset from the GOT, as PIC code does, unless the variable binds
+locally.  The prologue sets up the GOT pointer whenever a function uses it,
+with or without PIC, and A1LbP is a fixed register.
+
+--- a/gcc/config/metag/metag-linux.c
++++ b/gcc/config/metag/metag-linux.c
+@@ -629,8 +629,12 @@
+ 
+       tmp = gen_reg_rtx (Pmode);
+ 
+-      /* Produce different relocations depending on if PIC is enabled or not */
+-      if (METAG_FLAG_PIC)
++      /* Produce different relocations depending on if PIC is enabled or not.
++         Without PIC the offset can go into the code only for a variable of
++         this executable; one from a shared library is known only at run
++         time, so load it from the GOT as PIC code does.  The prologue sets
++         up the GOT pointer whenever a function uses it, PIC or not.  */
++      if (METAG_FLAG_PIC || !SYMBOL_REF_LOCAL_P (addr))
+         {
+           current_function_uses_pic_offset_table = 1;
+           emit_insn (gen_tls_ie (tmp, pic_offset_table_rtx, addr));
+--- a/gcc/config/metag/tls.md
++++ b/gcc/config/metag/tls.md
+@@ -104,12 +104,12 @@
+    ""
+    [])
+ 
+-;;Initial exec insn for PIC.
++;;Initial exec insn for PIC, and for variables of shared libraries without PIC.
+ (define_insn "tls_ie"
+   [(set (match_operand:SI                                     0 "metag_reg_nofloat_op" "=da")
+         (mem:SI (plus:SI (match_operand:SI                    1 "metag_pic_reg"         "a")
+                          (const:SI (unspec [(match_operand:SI 2 "tie_symbolic_operand" "")] UNSPEC_TLSIE)))))]
+-  "METAG_HAVE_TLS && METAG_FLAG_PIC && operands[1] == pic_offset_table_rtx"
++  "METAG_HAVE_TLS && operands[1] == pic_offset_table_rtx"
+   "GETD\t%0, [A1LbP+#(%c2@TLSIE)]")
+ 
+ ;;Initial exec insns for non-PIC.
