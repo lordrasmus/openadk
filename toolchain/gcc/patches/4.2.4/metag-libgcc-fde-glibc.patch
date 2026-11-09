@@ -1,0 +1,25 @@
+metag: find the FDEs of shared libraries through dl_iterate_phdr
+
+The Meta Linux target uses its own metag/t-linux instead of config/t-linux
+and so never set LIB2ADDEH: libgcc was built with unwind-dw2-fde.c, which
+only knows frames registered with __register_frame_info.  crtbegin.o does
+that for the executable, but a library linked without it -- the C library
+-- never registers its .eh_frame, so the unwinder found no FDE in it even
+with PT_GNU_EH_FRAME present.  Unwinding into libc stopped there: a thread
+cancelled in read() never got back to its cleanup handlers.
+
+Take unwind-dw2-fde-glibc.c, as config/t-linux does.
+
+--- a/gcc/config/metag/t-linux
++++ b/gcc/config/metag/t-linux
+@@ -44,3 +44,10 @@
+ # Don't make libgcc1-test since it will fail because it tries to link with liblow.a which doesn't exist for linux toolchain!
+ LIBGCC1_TEST =
+ 
++
++# Find the FDEs of shared libraries through PT_GNU_EH_FRAME and
++# dl_iterate_phdr, as config/t-linux does: a library linked without crtbegin,
++# such as the C library, never registers its frames.
++LIB2ADDEH = $(srcdir)/unwind-dw2.c $(srcdir)/unwind-dw2-fde-glibc.c \
++  $(srcdir)/unwind-sjlj.c $(srcdir)/gthr-gnat.c $(srcdir)/unwind-c.c
++LIB2ADDEHDEP = unwind.inc unwind-dw2-fde.h unwind-dw2-fde.c
