@@ -1,0 +1,29 @@
+metag: the module offset of a general-dynamic local symbol
+
+For general-dynamic access to a symbol that binds locally -- a static
+__thread variable, which gcc reaches through general-dynamic at -O0 --
+relocate_section wrote the DTPMOD relocation and left the second GOT word,
+the offset in the module's TLS block, at 0.  Every such variable then
+resolved to the start of the block: uClibc-ng's tst-tls10 and tst-tls11,
+whose modules are built without optimisation, read local1 from there.
+
+The offset is known at link time, as for the initial-exec entry below:
+relocation - dtpoff_base.
+
+diff --git a/bfd/elf32-metag.c b/bfd/elf32-metag.c
+index 7a56eea..293abf1 100644
+--- a/bfd/elf32-metag.c
++++ b/bfd/elf32-metag.c
+@@ -1797,8 +1797,11 @@ elf_metag_relocate_section (struct bfd_link_info *info,
+ 			htab->etab.srelgot->reloc_count++;
+ 			loc += sizeof (Elf32_External_Rela);
+ 
++			/* A symbol that binds locally has its offset in the
++			   module's block known now.  */
+ 			if (indx == 0)
+-			  bfd_put_32 (info->output_bfd, 0,
++			  bfd_put_32 (info->output_bfd,
++				      relocation - dtpoff_base (info),
+ 				      htab->etab.sgot->contents + cur_off + 4);
+ 			else
+ 			  {
