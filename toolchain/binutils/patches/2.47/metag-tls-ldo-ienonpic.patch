@@ -1,0 +1,59 @@
+metag: two TLS relocations in executables
+
+R_METAG_TLS_LDO_HI16/LO16 were resolved with tpoff in an executable.  The
+local-dynamic sequence is never relaxed on metag: it still calls
+__tls_get_addr for the module and adds the offset to what that returns.  So
+the offset has to stay relative to the module's TLS block in an executable
+too, else every local-dynamic access reads the TCB size (8 bytes) past the
+variable.  uClibc-ng's tst-tls1 and tst-tls2 read 0 instead of 1 through
+their local-dynamic macros.
+
+R_METAG_TLS_IENONPIC_HI16/LO16 put the thread pointer offset into the code.
+That offset is known at link time only for a variable of the executable
+itself; for one from a shared library the relocation was resolved like
+local-exec against an undefined symbol and silently came out as 0, so the
+program read the TCB instead of the variable (uClibc-ng's tst-tls-at-ctor,
+tst-tls10 to tst-tls12).  Refuse it with an error; gcc is fixed separately
+to take initial-exec through the GOT for such variables.
+
+diff --git a/bfd/elf32-metag.c b/bfd/elf32-metag.c
+index da7c5f1..12d3f49 100644
+--- a/bfd/elf32-metag.c
++++ b/bfd/elf32-metag.c
+@@ -1869,6 +1869,22 @@ elf_metag_relocate_section (struct bfd_link_info *info,
+ 
+ 	case R_METAG_TLS_IENONPIC_HI16:
+ 	case R_METAG_TLS_IENONPIC_LO16:
++	  /* The offset goes into the code: only a variable of the
++	     executable itself has one at link time.  */
++	  if (!bfd_link_pic (info)
++	      && hh != NULL
++	      && !SYMBOL_REFERENCES_LOCAL (info, &hh->eh))
++	    {
++	      _bfd_error_handler
++		/* xgettext:c-format */
++		(_("%pB(%pA+%#" PRIx64 "): %s relocation against `%s', "
++		   "which is not defined in the executable; rebuild it "
++		   "with a gcc that loads the offset from the GOT"),
++		 input_bfd, input_section, (uint64_t) rel->r_offset,
++		 howto->name, name);
++	      return false;
++	    }
++	  /* Fall through.  */
+ 	case R_METAG_TLS_LE_HI16:
+ 	case R_METAG_TLS_LE_LO16:
+ 	  if (bfd_link_pic (info))
+@@ -1886,10 +1902,9 @@ elf_metag_relocate_section (struct bfd_link_info *info,
+ 	  break;
+ 	case R_METAG_TLS_LDO_HI16:
+ 	case R_METAG_TLS_LDO_LO16:
+-	  if (! bfd_link_pic (info))
+-	    relocation = tpoff (info, relocation);
+-	  else
+-	    relocation -= dtpoff_base (info);
++	  /* The offset is added to what __tls_get_addr returned for the
++	     module, in an executable too: the call is not relaxed.  */
++	  relocation -= dtpoff_base (info);
+ 	  break;
+ 	case R_METAG_TLS_LDM:
+ 	  {
