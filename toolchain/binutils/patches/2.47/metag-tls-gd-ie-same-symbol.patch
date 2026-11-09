@@ -1,0 +1,98 @@
+metag: general-dynamic and initial-exec GOT entries for the same symbol
+
+check_relocs kept only the TLS type of the last relocation it saw for a
+symbol.  A symbol reached both through general-dynamic and through
+initial-exec -- one translation unit with the default model, another
+with tls_model ("initial-exec"), or uClibc-ng's tst-tls1/2/3, which test
+every model on the same variables -- got the GOT entries of only one of
+them, and both relocations resolved to the same slot.  An initial-exec
+load then read the module ID of the general-dynamic pair as a thread
+pointer offset: "Bus error" on a misaligned address.
+
+relocate_section already emits both kinds, the general-dynamic pair
+first.  Combine the types in check_relocs, reserve the third word and
+its relocation, and point R_METAG_TLS_IE past the pair.
+
+diff --git a/bfd/elf32-metag.c b/bfd/elf32-metag.c
+index 12d3f49..aa54d36 100644
+--- a/bfd/elf32-metag.c
++++ b/bfd/elf32-metag.c
+@@ -1861,6 +1861,11 @@ elf_metag_relocate_section (struct bfd_link_info *info,
+ 		    local_got_offsets[r_symndx] |= 1;
+ 	      }
+ 
++	    /* The initial-exec slot follows the general-dynamic pair when
++	       the symbol has both.  */
++	    if (r_type == R_METAG_TLS_IE && (tls_type & GOT_TLS_GD))
++	      off += 8;
++
+ 	    /* Add the base of the GOT to the relocation value.  */
+ 	    relocation = off - GOT_REG_OFFSET;
+ 
+@@ -2173,6 +2178,12 @@ elf_metag_check_relocs (bfd *abfd,
+ 	      old_tls_type = metag_elf_local_got_tls_type (abfd) [r_symndx];
+ 	    }
+ 
++	  /* A symbol reached both through general-dynamic and through
++	     initial-exec needs both kinds of GOT entry.  */
++	  if ((old_tls_type & (GOT_TLS_GD | GOT_TLS_IE))
++	      && (tls_type & (GOT_TLS_GD | GOT_TLS_IE)))
++	    tls_type |= old_tls_type;
++
+ 	  if (old_tls_type != tls_type)
+ 	    {
+ 	      if (hh != NULL)
+@@ -2589,17 +2600,26 @@ allocate_dynrelocs (struct elf_link_hash_entry *eh, void *inf)
+ 
+       eh->got.offset = s->size;
+       s->size += 4;
+-      /* R_METAG_TLS_GD needs 2 consecutive GOT slots.  */
+-      if (tls_type == GOT_TLS_GD)
++      /* R_METAG_TLS_GD needs 2 consecutive GOT slots, and with
++	 R_METAG_TLS_IE as well its slot follows them.  */
++      if (tls_type & GOT_TLS_GD)
++	  s->size += 4;
++      if ((tls_type & GOT_TLS_GD) && (tls_type & GOT_TLS_IE))
+ 	  s->size += 4;
+       dyn = htab->etab.dynamic_sections_created;
+       /* R_METAG_TLS_IE needs one dynamic relocation if dynamic,
+ 	 R_METAG_TLS_GD needs one if local symbol and two if global.  */
+-      if ((tls_type == GOT_TLS_GD && eh->dynindx == -1)
+-	  || (tls_type == GOT_TLS_IE && dyn))
+-	htab->etab.srelgot->size += sizeof (Elf32_External_Rela);
+-      else if (tls_type == GOT_TLS_GD)
+-	  htab->etab.srelgot->size += 2 * sizeof (Elf32_External_Rela);
++      if (tls_type & (GOT_TLS_GD | GOT_TLS_IE))
++	{
++	  if (tls_type & GOT_TLS_GD)
++	    htab->etab.srelgot->size += (eh->dynindx == -1 ? 1 : 2)
++					* sizeof (Elf32_External_Rela);
++	  if ((tls_type & GOT_TLS_IE)
++	      && (dyn || WILL_CALL_FINISH_DYNAMIC_SYMBOL (dyn,
++							   bfd_link_pic (info),
++							   eh)))
++	    htab->etab.srelgot->size += sizeof (Elf32_External_Rela);
++	}
+       else if (WILL_CALL_FINISH_DYNAMIC_SYMBOL (dyn,
+ 						bfd_link_pic (info),
+ 						eh))
+@@ -2781,9 +2801,17 @@ elf_metag_late_size_sections (struct bfd_link_info *info)
+ 	    {
+ 	      *local_got = s->size;
+ 	      s->size += GOT_ENTRY_SIZE;
+-	      /* R_METAG_TLS_GD relocs need 2 consecutive GOT entries.  */
+-	      if (*local_tls_type == GOT_TLS_GD)
++	      /* R_METAG_TLS_GD relocs need 2 consecutive GOT entries,
++		 an R_METAG_TLS_IE slot as well follows them.  */
++	      if (*local_tls_type & GOT_TLS_GD)
+ 		s->size += 4;
++	      if ((*local_tls_type & GOT_TLS_GD)
++		  && (*local_tls_type & GOT_TLS_IE))
++		{
++		  s->size += 4;
++		  if (bfd_link_pic (info))
++		    srel->size += sizeof (Elf32_External_Rela);
++		}
+ 	      if (bfd_link_pic (info))
+ 		srel->size += sizeof (Elf32_External_Rela);
+ 	    }
