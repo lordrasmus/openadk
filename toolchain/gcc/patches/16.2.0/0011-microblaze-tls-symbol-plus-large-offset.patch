@@ -1,0 +1,56 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ramin Moussavi <lordrasmus@gmail.com>
+Date: Wed, 25 Nov 2026 21:46:14 +0100
+Subject: [PATCH] microblaze: do not take a TLS symbol plus a large offset as
+ an address
+
+microblaze_classify_address rejects a thread-local SYMBOL_REF, and in
+the base + (const (plus sym offset)) form it rejects it as well, but only
+when the offset is a SMALL_INT.  A bare (const (plus tls_sym offset))
+with a larger offset reaches the CONST case, which accepts it as an
+absolute address without looking at the symbol.  At -O2
+
+  __thread unsigned char a[65536];
+  int f (void) { return a[65535]; }
+
+then loads from the link-time address of the TLS template:
+
+  imm   1
+  lbui  r3, r0, -1        ; R_MICROBLAZE_64 a+0xffff
+
+instead of going through __tls_get_addr and R_MICROBLAZE_TLSDTPREL64.
+Any constant offset above 32767 triggers it, for every TLS model,
+without -fPIC.  In .tbss that faults; in .tdata it silently reads or
+overwrites the initialization image instead of the thread's copy.
+
+Reject TLS references in the CONST case too, so the address goes
+through microblaze_legitimize_address.
+
+gcc/ChangeLog:
+
+	* config/microblaze/microblaze.cc (microblaze_classify_address):
+	Reject a CONST that refers to a TLS symbol.
+
+Signed-off-by: Ramin Moussavi <lordrasmus@gmail.com>
+---
+ gcc/config/microblaze/microblaze.cc | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/gcc/config/microblaze/microblaze.cc b/gcc/config/microblaze/microblaze.cc
+index 84f40f9eedf9..2fe85032dca5 100644
+--- a/gcc/config/microblaze/microblaze.cc
++++ b/gcc/config/microblaze/microblaze.cc
+@@ -875,6 +875,10 @@ microblaze_classify_address (struct microblaze_address_info *info, rtx x,
+ 
+ 	if (GET_CODE (x) == CONST)
+ 	  {
++	    /* (const (plus tls_symbol offset)) is not an absolute address;
++	       it has to go through microblaze_legitimize_address.  */
++	    if (microblaze_tls_referenced_p (x))
++	      return false;
+ 	    if (GET_CODE (XEXP (x, 0)) == UNSPEC)
+ 	     {
+ 		info->regA = gen_raw_REG (mode,
+-- 
+2.53.0
+
