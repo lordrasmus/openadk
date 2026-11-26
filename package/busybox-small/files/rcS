@@ -1,0 +1,8 @@
+#!/bin/sh
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin
+# disable kernel messages
+if [ -f /proc/sys/kernel/printk ];then
+	echo 0 > /proc/sys/kernel/printk
+fi
+echo "System initialization ..."
+/bin/sh

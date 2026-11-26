@@ -41,6 +41,7 @@ config ADK_TARGET_LIB_UCLIBC_NG
 		ADK_TARGET_ARCH_SPARC || \
 		ADK_TARGET_ARCH_SPARC64 || \
 		ADK_TARGET_ARCH_TILE || \
+		ADK_TARGET_ARCH_V850 || \
 		ADK_TARGET_ARCH_X86 || \
 		ADK_TARGET_ARCH_X86_64 || \
 		ADK_TARGET_ARCH_XTENSA) && ADK_TARGET_OS_LINUX
@@ -149,8 +150,8 @@ choice
 prompt "Target C library version"
 depends on !ADK_TARGET_CHOOSE_ARCH
 
-config ADK_TARGET_LIB_UCLIBC_NG_1_0_59
-	bool "1.0.59"
+config ADK_TARGET_LIB_UCLIBC_NG_1_0_60
+	bool "1.0.60"
 	depends on ADK_TARGET_LIB_UCLIBC_NG
 
 config ADK_TARGET_LIB_UCLIBC_NG_GIT
@@ -198,6 +199,15 @@ config ADK_TARGET_LIB_UCLIBC_NG_GIT_REF
 	  Commit to check out.  Empty builds the head of the default
 	  branch with the patches in toolchain/uclibc-ng/patches/git;
 	  a commit is built as it is, without patches.
+#config ADK_TARGET_MINIMAL_USERLAND
+#	bool "Minimal userland without a C library"
+#	depends on ADK_TARGET_OS_LINUX && ADK_TARGET_ARCH_V850
+#	default y
+#	select ADK_PACKAGE_MINI_INIT_V850 if ADK_TARGET_ARCH_V850
+#	help
+#	  Build only the bootstrap compiler, the kernel and an initramfs
+#	  holding a tiny assembler /init that prints one line.  Meant for
+#	  bringing up an architecture whose C library is not ported yet.
 
 config ADK_TARGET_LIBC_UTILS
 	bool
@@ -205,6 +215,7 @@ config ADK_TARGET_LIBC_UTILS
 	default n if ADK_TARGET_ARCH_LM32
 	default n if ADK_TARGET_ARCH_H8300
 	default n if ADK_TARGET_ARCH_LOONGARCH
+	default n if ADK_TARGET_ARCH_V850
 	default n if ADK_TARGET_CPU_SH_J2
 	default n if ADK_BUILD_COMPILER_LLVM
 	default y
@@ -218,7 +229,7 @@ config ADK_TARGET_LIBC
 
 config ADK_LIBC_VERSION
 	string
-	default "1.0.59" if ADK_TARGET_LIB_UCLIBC_NG_1_0_59
+	default "1.0.60" if ADK_TARGET_LIB_UCLIBC_NG_1_0_60
 	default "1.2.6" if ADK_TARGET_LIB_MUSL_1_2_6
 	default "2.44" if ADK_TARGET_LIB_GLIBC_2_44
 	default "4.6.0" if ADK_TARGET_LIB_NEWLIB_4_6_0

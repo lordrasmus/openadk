@@ -11,8 +11,6 @@ PKG_SECTION:=		base/tests
 PKG_URL:=		https://uclibc-ng.org
 PKG_SITES:=		https://git.uclibc-ng.org/git/uclibc-ng-test.git
 
-PKG_NOPARALLEL:=	1
-
 PKG_SUBPKGS:=		UCLIBC_NG_TEST UCLIBC_NG_TEST_ALL UCLIBC_NG_TEST_NPTL UCLIBC_NG_TEST_WCHAR UCLIBC_NG_TEST_MATH
 PKG_SUBPKGS+=		UCLIBC_NG_TEST_OTHER
 PKGSD_UCLIBC_NG_TEST_ALL:=		all uClibc-ng tests
@@ -84,7 +82,7 @@ ifeq ($(ADK_PACKAGE_UCLIBC_NG_TEST_NPTL),y)
 	mkdir -p ${IDIR_UCLIBC_NG_TEST_NPTL}/usr/lib/uclibc-ng-test/test
 	${CP} $(WRKINST)/usr/lib/uclibc-ng-test/test/nptl \
 		${IDIR_UCLIBC_NG_TEST_NPTL}/usr/lib/uclibc-ng-test/test
-	${CP} $(WRKINST)/usr/lib/uclibc-ng-test/test/uclibcng-testrunner.sh \
+	${CP} $(WRKINST)/usr/lib/uclibc-ng-test/test/uclibcng-testrunner* \
 		${IDIR_UCLIBC_NG_TEST_NPTL}/usr/lib/uclibc-ng-test/test
 	cat $(WRKINST)/usr/lib/uclibc-ng-test/test/uclibcng-testrunner.in \
 		| gawk '$$4 == "nptl"' > \
@@ -92,9 +90,9 @@ ifeq ($(ADK_PACKAGE_UCLIBC_NG_TEST_NPTL),y)
 endif
 ifeq ($(ADK_PACKAGE_UCLIBC_NG_TEST_WCHAR),y)
 	mkdir -p ${IDIR_UCLIBC_NG_TEST_WCHAR}/usr/lib/uclibc-ng-test/test
-	${CP} $(WRKINST)/usr/lib/uclibc-ng-test/test/nptl \
+	${CP} $(WRKINST)/usr/lib/uclibc-ng-test/test/locale-mbwc \
 		${IDIR_UCLIBC_NG_TEST_WCHAR}/usr/lib/uclibc-ng-test/test
-	${CP} $(WRKINST)/usr/lib/uclibc-ng-test/test/uclibcng-testrunner.sh \
+	${CP} $(WRKINST)/usr/lib/uclibc-ng-test/test/uclibcng-testrunner* \
 		${IDIR_UCLIBC_NG_TEST_WCHAR}/usr/lib/uclibc-ng-test/test
 	cat $(WRKINST)/usr/lib/uclibc-ng-test/test/uclibcng-testrunner.in \
 		| gawk '$$4 == "locale-mbwc"' > \
@@ -104,7 +102,7 @@ ifeq ($(ADK_PACKAGE_UCLIBC_NG_TEST_MATH),y)
 	mkdir -p ${IDIR_UCLIBC_NG_TEST_MATH}/usr/lib/uclibc-ng-test/test
 	${CP} $(WRKINST)/usr/lib/uclibc-ng-test/test/math \
 		${IDIR_UCLIBC_NG_TEST_MATH}/usr/lib/uclibc-ng-test/test
-	${CP} $(WRKINST)/usr/lib/uclibc-ng-test/test/uclibcng-testrunner.sh \
+	${CP} $(WRKINST)/usr/lib/uclibc-ng-test/test/uclibcng-testrunner* \
 		${IDIR_UCLIBC_NG_TEST_NPTL}/usr/lib/uclibc-ng-test/test
 	cat $(WRKINST)/usr/lib/uclibc-ng-test/test/uclibcng-testrunner.in \
 		| gawk '$$4 == "math"' > \
@@ -118,7 +116,7 @@ ifeq ($(ADK_PACKAGE_UCLIBC_NG_TEST_OTHER),y)
 		${IDIR_UCLIBC_NG_TEST_OTHER}/usr/lib/uclibc-ng-test/test
 	${CP} $(WRKINST)/usr/lib/uclibc-ng-test/test/{stdio,stdlib,string,termios,time,tls,unistd,iconv} \
 		${IDIR_UCLIBC_NG_TEST_OTHER}/usr/lib/uclibc-ng-test/test
-	${CP} $(WRKINST)/usr/lib/uclibc-ng-test/test/uclibcng-testrunner.sh \
+	${CP} $(WRKINST)/usr/lib/uclibc-ng-test/test/uclibcng-testrunner* \
 		${IDIR_UCLIBC_NG_TEST_OTHER}/usr/lib/uclibc-ng-test/test
 	cat $(WRKINST)/usr/lib/uclibc-ng-test/test/uclibcng-testrunner.in \
 		| gawk '$$4 !~ /^(nptl|math|locale-mbwc)$$/' > \

@@ -4,9 +4,9 @@
 include ${ADK_TOPDIR}/rules.mk
 
 PKG_NAME:=		python3
-PKG_VERSION:=		3.14.8
+PKG_VERSION:=		3.15.2
 PKG_RELEASE:=		1
-PKG_HASH:=		c2215904f02b175596dc49351585104f4bc20341e1c47378b26a2c274360ce73
+PKG_HASH:=		8b5536d280142ecf6cdfe15d12a21ba1c65e300bbf7b28a8d0cdb849575797de
 PKG_DESCR:=		python scripting language
 PKG_SECTION:=		dev/lang
 PKG_DEPENDS:=		libffi zlib libexpat
@@ -17,7 +17,7 @@ PKG_URL:=		http://www.python.org/
 PKG_SITES:=		https://www.python.org/ftp/python/$(PKG_VERSION)/
 
 PKG_FLAVOURS_PYTHON3:=	MOD_ZLIB MOD_BZ2 MOD_SQLITE MOD_GDBM
-PKG_FLAVOURS_PYTHON3+=	MOD_NCURSES MOD_OPENSSL MOD_READLINE
+PKG_FLAVOURS_PYTHON3+=	MOD_NCURSES MOD_OPENSSL MOD_READLINE MOD_EXPAT
 			
 PKGFD_MOD_ZLIB:=	zlib support
 PKGFB_MOD_ZLIB:=	zlib
@@ -40,6 +40,9 @@ PKGFS_MOD_READLINE:=	libreadline
 PKGFD_MOD_OPENSSL:=	openssl support
 PKGFB_MOD_OPENSSL:=	openssl
 PKGFS_MOD_OPENSSL:=	libopenssl
+PKGFD_MOD_EXPAT:=	expat support
+PKGFB_MOD_EXPAT:=	expat
+PKGFS_MOD_EXPAT:=	libexpat
 
 DISTFILES:=		Python-${PKG_VERSION}.tar.xz
 WRKDIST=		${WRKDIR}/Python-${PKG_VERSION}
@@ -52,9 +55,9 @@ define PKG_mod_template
 INSTALL_MODS_$${ADK_PACKAGE_${1}}+=    ${2}-install
 
 ${2}-install:
-	${INSTALL_DIR} $$(IDIR_$(1))/usr/lib/python3.14/lib-dynload
+	${INSTALL_DIR} $$(IDIR_$(1))/usr/lib/python3.15/lib-dynload
 	for m in ${2}; do \
-		${INSTALL_DATA} $(WRKINST)/usr/lib/python3.14/lib-dynload/$$$${m}*.so $$(IDIR_$(1))/usr/lib/python3.14/lib-dynload ;\
+		${INSTALL_DATA} $(WRKINST)/usr/lib/python3.15/lib-dynload/$$$${m}*.so $$(IDIR_$(1))/usr/lib/python3.15/lib-dynload ;\
 	done
 endef
 
@@ -69,6 +72,7 @@ $(eval $(call PKG_template,PYTHON3_MOD_GDBM,python3-mod-gdbm,$(PKG_VERSION)-${PK
 $(eval $(call PKG_template,PYTHON3_MOD_NCURSES,python3-mod-ncurses,$(PKG_VERSION)-${PKG_RELEASE},${PKGFS_MOD_NCURSES},${PKGFD_MOD_NCURSES},${PKG_SECTION}))
 $(eval $(call PKG_template,PYTHON3_MOD_OPENSSL,python3-mod-openssl,$(PKG_VERSION)-${PKG_RELEASE},${PKGFS_MOD_OPENSSL},${PKGFD_MOD_OPENSSL},${PKG_SECTION}))
 $(eval $(call PKG_template,PYTHON3_MOD_READLINE,python3-mod-readline,$(PKG_VERSION)-${PKG_RELEASE},${PKGFS_MOD_READLINE},${PKGFD_MOD_READLINE},${PKG_SECTION}))
+$(eval $(call PKG_template,PYTHON3_MOD_EXPAT,python3-mod-expat,$(PKG_VERSION)-${PKG_RELEASE},${PKGFS_MOD_EXPAT},${PKGFD_MOD_EXPAT},${PKG_SECTION}))
 
 $(eval $(call PKG_mod_template,PYTHON3_MOD_ZLIB,zlib))
 $(eval $(call PKG_mod_template,PYTHON3_MOD_BZ2,_bz2))
@@ -77,11 +81,12 @@ $(eval $(call PKG_mod_template,PYTHON3_MOD_GDBM,_gdbm))
 $(eval $(call PKG_mod_template,PYTHON3_MOD_NCURSES,_curses))
 $(eval $(call PKG_mod_template,PYTHON3_MOD_OPENSSL,_ssl))
 $(eval $(call PKG_mod_template,PYTHON3_MOD_READLINE,readline))
+$(eval $(call PKG_mod_template,PYTHON3_MOD_EXPAT,pyexpat))
 
 MAKE_ENV+=		HOSTPGEN=$(STAGING_HOST_DIR)/usr/bin/pgen3
 FAKE_FLAGS+=		ENSUREPIP=no
 CONFIGURE_ARGS:=	--with-system-expat \
-			--disable-test-modules \
+			--enable-test-modules \
 			--with-build-python=$(STAGING_HOST_DIR)/usr/bin/python3
 
 CONFIGURE_ENV+=		ac_cv_have_long_long_format=yes \
@@ -98,15 +103,15 @@ endif
 
 python3-install: ${INSTALL_MODS_y} ${INSTALL_MODS_m}
 	${INSTALL_DIR} ${IDIR_PYTHON3}/usr/bin ${IDIR_PYTHON3}/usr/lib
-	${INSTALL_DIR} ${IDIR_PYTHON3}/usr/lib/python3.14
-	${INSTALL_DIR} ${IDIR_PYTHON3}/usr/include/python3.14
+	${INSTALL_DIR} ${IDIR_PYTHON3}/usr/lib/python3.15
+	${INSTALL_DIR} ${IDIR_PYTHON3}/usr/include/python3.15
 	${CP} ${WRKINST}/usr/bin/python3* ${IDIR_PYTHON3}/usr/bin
 	${CP} ${WRKINST}/usr/lib/libpython*.so* ${IDIR_PYTHON3}/usr/lib
-	${CP} ${WRKINST}/usr/lib/python3.14/* ${IDIR_PYTHON3}/usr/lib/python3.14
-	${CP} ${WRKINST}/usr/include/python3.14/pyconfig.h \
-		 ${IDIR_PYTHON3}/usr/include/python3.14
+	${CP} ${WRKINST}/usr/lib/python3.15/* ${IDIR_PYTHON3}/usr/lib/python3.15
+	${CP} ${WRKINST}/usr/include/python3.15/pyconfig.h \
+		 ${IDIR_PYTHON3}/usr/include/python3.15
 	@-for i in zlib _bz2 _curses _ssl _gdbm _sqlite pyexpat readline; do \
-		rm ${IDIR_PYTHON3}/usr/lib/python3.14/lib-dynload/$${i}*so; \
+		rm ${IDIR_PYTHON3}/usr/lib/python3.15/lib-dynload/$${i}*so; \
 	done
 
 include ${ADK_TOPDIR}/mk/host-bottom.mk

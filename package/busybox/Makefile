@@ -5,7 +5,7 @@ include $(ADK_TOPDIR)/rules.mk
 
 PKG_NAME:=		busybox
 PKG_VERSION:=		1.38.0
-PKG_RELEASE:=		1
+PKG_RELEASE:=		2
 PKG_HASH:=		34f9ea6ff8636f2c9241153b9114eefa9e65674a45318ae1ef95bb5f31c53bb2
 PKG_DESCR:=		core utilities for embedded systems
 PKG_SECTION:=		base/apps
@@ -44,21 +44,21 @@ do-configure:
 		symbol=$$(echo $$sym|sed -e "s#=y##"); \
 		case $$symbol in \
 		  GREP) \
-			printf "# CONFIG_GREP is not set\n" >> ${WRKBUILD}/.config; \
-			printf "# CONFIG_EGREP is not set\n" >> ${WRKBUILD}/.config; \
-			printf "# CONFIG_FGREP is not set\n" >> ${WRKBUILD}/.config; \
+			$(SED) 's/.*\(CONFIG_GREP\)=.*/# \1 is not set/' ${WRKBUILD}/.config; \
+			$(SED) 's/.*\(CONFIG_EGREP\)=.*/# \1 is not set/' ${WRKBUILD}/.config; \
+			$(SED) 's/.*\(CONFIG_FGREP\)=.*/# \1 is not set/' ${WRKBUILD}/.config; \
 			;; \
 		  KMOD) \
-			printf "# CONFIG_MODINFO is not set\n" >> ${WRKBUILD}/.config; \
-			printf "# CONFIG_MODPROBE_SMALL is not set\n" >> ${WRKBUILD}/.config; \
-			printf "# CONFIG_INSMOD is not set\n" >> ${WRKBUILD}/.config; \
-			printf "# CONFIG_RMMOD is not set\n" >> ${WRKBUILD}/.config; \
-			printf "# CONFIG_LSMOD is not set\n" >> ${WRKBUILD}/.config; \
-			printf "# CONFIG_MODPROBE is not set\n" >> ${WRKBUILD}/.config; \
-			printf "# CONFIG_DEPMOD is not set\n" >> ${WRKBUILD}/.config; \
+			$(SED) 's/.*\(CONFIG_MODINFO\)=.*/# \1 is not set/' ${WRKBUILD}/.config; \
+			$(SED) 's/.*\(CONFIG_INSMOD\)=.*/# \1 is not set/' ${WRKBUILD}/.config; \
+			$(SED) 's/.*\(CONFIG_RMMOD\)=.*/# \1 is not set/' ${WRKBUILD}/.config; \
+			$(SED) 's/.*\(CONFIG_LSMOD\)=.*/# \1 is not set/' ${WRKBUILD}/.config; \
+			$(SED) 's/.*\(CONFIG_MODPROBE\)=.*/# \1 is not set/' ${WRKBUILD}/.config; \
+			$(SED) 's/.*\(CONFIG_DEPMOD\)=.*/# \1 is not set/' ${WRKBUILD}/.config; \
+			$(SED) 's/.*\(CONFIG_MODPROBE_SMALL\)=.*/# \1 is not set/' ${WRKBUILD}/.config; \
 			;; \
 		  *) \
-			printf "# CONFIG_$${symbol} is not set\n" >> ${WRKBUILD}/.config; \
+			$(SED) "s/.*\(CONFIG_$${symbol}\)=.*/# \1 is not set/" ${WRKBUILD}/.config; \
 			;; \
 		esac \
 	done
@@ -70,7 +70,7 @@ do-build:
 do-install:
 	PATH='$(HOST_PATH)' $(MAKE) ${BB_MAKE_FLAGS} -C ${WRKBUILD} install $(MAKE_TRACE)
 	$(CP) $(WRKINST)/* $(IDIR_BUSYBOX)/
-ifeq ($(BUSYBOX_IFUP)$(ADK_TARGET_WITH_NETDEVICE),yy)
+ifeq ($(BUSYBOX_IFUP),y)
 	$(INSTALL_DIR) $(IDIR_BUSYBOX)/etc/init.d
 ifeq ($(ADK_RUNTIME_WAIT_FOR_ETHERNET),y)
 	$(INSTALL_BIN) ./files/network.wait $(IDIR_BUSYBOX)/etc/init.d/network

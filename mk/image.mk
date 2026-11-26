@@ -45,7 +45,12 @@ $(error No login shell configured!)
 endif
 endif
 
+ifeq ($(ADK_TARGET_MINIMAL_USERLAND),y)
+# no base-files: there is no /etc to set up
+imageprepare:
+else
 imageprepare: image-prepare-post extra-install prelink
+endif
 
 # if an extra directory exist in ADK_TOPDIR, copy all content over the 
 # root directory, do the same if make extra=/dir/to/extra is used
@@ -174,6 +179,7 @@ ${STAGING_TARGET_DIR}/${INITRAMFS}_list: ${TARGET_DIR}/.adk
 		echo "nod /dev/random 0666 0 0 c 1 8"; \
 		echo "nod /dev/urandom 0666 0 0 c 1 9"; \
 		echo "nod /dev/ttyS0 0660 0 0 c 4 64"; \
+		echo "slink /dev/simcons0 /dev/ttyS0 644 0 0"; \
 		echo "nod /dev/ttysclp0 0660 0 0 c 4 65"; \
 		echo "nod /dev/ttyB0 0660 0 0 c 11 0"; \
 		echo "nod /dev/ttyB1 0660 0 0 c 11 1"; \
@@ -242,6 +248,15 @@ createinitramfs: ${STAGING_TARGET_DIR}/${INITRAMFS}_list
 		echo 'CONFIG_INITRAMFS_PRESERVE_MTIME=n'; \
 		echo 'CONFIG_ACPI_TABLE_UPGRADE=n'; \
 		echo 'CONFIG_ACPI_TABLE_OVERRIDE_VIA_BUILTIN_INITRD=n'; \
+		echo 'CONFIG_XZ_DEC_X86=n'; \
+		echo 'CONFIG_XZ_DEC_POWERPC=n'; \
+		echo 'CONFIG_XZ_DEC_ARM=n'; \
+		echo 'CONFIG_XZ_DEC_ARMTHUMB=n'; \
+		echo 'CONFIG_XZ_DEC_ARM64=n'; \
+		echo 'CONFIG_XZ_DEC_RISCV=n'; \
+		echo 'CONFIG_XZ_DEC_SPARC=n'; \
+		echo 'CONFIG_XZ_DEC_MICROLZMA=n'; \
+		echo 'CONFIG_XZ_DEC_TEST=n'; \
 	) >> ${LINUX_DIR}/.config
 ifeq ($(ADK_LINUX_KERNEL_COMP_ZSTD),y)
 		echo "CONFIG_RD_XZ=n" >> ${LINUX_DIR}/.config
@@ -252,6 +267,16 @@ ifeq ($(ADK_LINUX_KERNEL_COMP_ZSTD),y)
 		echo "CONFIG_RD_LZMA=n" >> ${LINUX_DIR}/.config
 		echo "CONFIG_RD_ZSTD=y" >> ${LINUX_DIR}/.config
 		echo "CONFIG_INITRAMFS_COMPRESSION_ZSTD=y" >> ${LINUX_DIR}/.config
+endif
+ifeq ($(ADK_LINUX_KERNEL_COMP_XZ),y)
+		echo "CONFIG_RD_XZ=y" >> ${LINUX_DIR}/.config
+		echo "CONFIG_RD_BZIP2=n" >> ${LINUX_DIR}/.config
+		echo "CONFIG_RD_GZIP=n" >> ${LINUX_DIR}/.config
+		echo "CONFIG_RD_LZO=n" >> ${LINUX_DIR}/.config
+		echo "CONFIG_RD_LZ4=n" >> ${LINUX_DIR}/.config
+		echo "CONFIG_RD_LZMA=n" >> ${LINUX_DIR}/.config
+		echo "CONFIG_RD_ZSTD=n" >> ${LINUX_DIR}/.config
+		echo "CONFIG_INITRAMFS_COMPRESSION_XZ=y" >> ${LINUX_DIR}/.config
 endif
 ifeq ($(ADK_LINUX_KERNEL_COMP_LZ4),y)
 		echo "CONFIG_RD_XZ=n" >> ${LINUX_DIR}/.config
