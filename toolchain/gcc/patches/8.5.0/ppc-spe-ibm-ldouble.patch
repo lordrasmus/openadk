@@ -1,0 +1,26 @@
+libgcc: build the IBM long double comparisons and conversions for SPE
+
+With --with-long-double-128 on powerpc*-linux-gnuspe, gcc emits calls to
+__gcc_qeq, __gcc_qle, __gcc_qtos, __gcc_stoq, __gcc_itoq and the others
+for TFmode compares and conversions (there are no FPRs to do them in).
+ibm-ldouble.c only built those under _SOFT_DOUBLE, which e500v2 does not
+define because its double is in hardware, so every long double compare
+or conversion failed to link.  Build them under __NO_FPRS__ as well;
+they use __eqdf2/__ledf2/__gedf2, which libgcc has for SPE.
+
+--- a/libgcc/config/rs6000/ibm-ldouble.c	2026-11-26 14:04:38.453163372 +0100
++++ b/libgcc/config/rs6000/ibm-ldouble.c	2026-11-26 14:04:38.576166702 +0100
+@@ -243,7 +243,12 @@
+   return pack_ldouble (xh, xl);
+ }
+ 
+-#if defined (_SOFT_DOUBLE) && defined (__LONG_DOUBLE_128__)
++/* The comparisons and conversions go through library calls whenever
++   there are no FPRs, not only with a software double: e500v2 (SPE) has
++   double in hardware, defines __NO_FPRS__ but not _SOFT_DOUBLE, and gcc
++   still calls these.  */
++#if (defined (_SOFT_DOUBLE) || defined (__NO_FPRS__)) \
++    && defined (__LONG_DOUBLE_128__)
+ 
+ IBM128_TYPE __gcc_qneg (double, double);
+ int __gcc_qeq (double, double, double, double);
