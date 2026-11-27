@@ -1,0 +1,30 @@
+diff -Nur linux-6a2f2e4198eaff63ee75f6085ce9f966c47b4441.orig/arch/lm32/kernel/sys_lm32.c linux-6a2f2e4198eaff63ee75f6085ce9f966c47b4441/arch/lm32/kernel/sys_lm32.c
+--- linux-6a2f2e4198eaff63ee75f6085ce9f966c47b4441.orig/arch/lm32/kernel/sys_lm32.c
++++ linux-6a2f2e4198eaff63ee75f6085ce9f966c47b4441/arch/lm32/kernel/sys_lm32.c
+@@ -80,19 +80,22 @@
+ 
+ /* the args to sys_lm32_clone try to match the libc call to avoid register
+  * reshuffling:
+- *   int clone(int (*fn)(void *arg), void *child_stack, int flags, void *arg); */
++ *   int clone(int (*fn)(void *arg), void *child_stack, int flags, void *arg,
++ *             pid_t *ptid, void *tls, pid_t *ctid);
++ * r7 is taken by regs, so the C library passes ctid in r6 instead of tls,
++ * which lm32 has no use for. */
+ asmlinkage int sys_clone(
+ 		int _unused_fn,
+ 		unsigned long newsp,
+ 		unsigned long clone_flags,
+ 		int _unused_arg,
+-		unsigned long _unused_r5,
+-		int _unused_r6,
++		int __user *parent_tidptr,
++		int __user *child_tidptr,
+ 		struct pt_regs *regs)
+ {
+ 	if (!newsp)
+ 		newsp = current->thread.usp;
+ 
+-	return do_fork(clone_flags, newsp, regs, 0, NULL, NULL);
++	return do_fork(clone_flags, newsp, regs, 0, parent_tidptr, child_tidptr);
+ }
+ 
